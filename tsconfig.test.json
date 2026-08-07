@@ -1,0 +1,12 @@
+{
+  // Typechecking only, and separate from tsconfig.json because that one is the
+  // build: it pins rootDir to src so dist mirrors the source tree, which the
+  // test files sit outside of. Without this second project the test suite is
+  // the one part of the codebase tsc never looks at.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
+}

@@ -1,0 +1,67 @@
+{
+  "name": "pylos-mcp",
+  "version": "0.1.0",
+  "mcpName": "io.github.adamVass/pylos-mcp",
+  "description": "Read-focused, prompt-injection-hardened email MCP server for any IMAP provider",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "modelcontextprotocol",
+    "email",
+    "imap",
+    "smtp",
+    "sieve",
+    "prompt-injection",
+    "security",
+    "claude"
+  ],
+  "homepage": "https://github.com/adamVass/pylos-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/adamVass/pylos-mcp/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adamVass/pylos-mcp.git"
+  },
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "pylos-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "test": "vitest run test/unit test/mcp",
+    "test:integration": "bash test/integration/run.sh",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "format": "biome format --write src test",
+    "format:check": "biome format src test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.0",
+    "html-to-text": "^9.0.5",
+    "htmlparser2": "^8.0.2",
+    "imapflow": "^1.3.0",
+    "nodemailer": "^9.0.0",
+    "zod": "^3.25.56"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.7",
+    "@types/html-to-text": "^9.0.4",
+    "@types/mailparser": "^3.4.5",
+    "@types/node": "^22.0.0",
+    "@types/nodemailer": "^8.0.1",
+    "@types/smtp-server": "^3.5.10",
+    "domhandler": "^5.0.3",
+    "mailparser": "^3.7.0",
+    "smtp-server": "^3.13.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}
