@@ -1,0 +1,66 @@
+# Publishes to npm on a version tag. It cannot succeed until an npm automation
+# token exists in the repository secrets as NPM_TOKEN. Until then releases are
+# published locally, per RELEASING.md, and a pushed version tag only produces
+# a failed run here.
+#
+# Provenance is the reason this is a workflow rather than a local `npm publish`:
+# `--provenance` needs the OIDC token GitHub only issues to a job with
+# `id-token: write`, and it is what lets anyone verify a published tarball was
+# built from this repository at this commit.
+#
+# The two prerequisites npm actually enforces are both satisfied below:
+# `id-token: write`, and `--access public` (it refuses to generate provenance
+# for a package it cannot confirm is public, which a first publish never is).
+# It does NOT need a `repository` field in package.json, contrary to the usual
+# advice: provenance takes the repository from GITHUB_REPOSITORY, not the
+# manifest. Adding one is still worth doing for the npm package page, but it is
+# not what would break this workflow.
+#
+# Actions are pinned by commit SHA rather than by tag. A tag is a moving
+# reference the action's owner can repoint, so `@v4` would grant every future
+# v4 the npm token this job holds; a SHA is the artifact that was reviewed.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # The tag is what a human types, the version is what gets published, and
+      # nothing else in this pipeline compares them. Without this, pushing
+      # v0.2.0 at a tree whose package.json still says 0.1.0 publishes 0.1.0
+      # (or fails on an already-published version) under a tag claiming
+      # otherwise, and the npm version cannot be corrected afterwards.
+      - name: Check the tag matches the package version
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="v$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$version" ]; then
+            echo "tag $tag does not match package.json version $version" >&2
+            exit 1
+          fi
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      # The same gates CI runs, repeated here: a tag can be pushed without a
+      # green CI run, and this is the last point before the package is public.
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm test
+      # No explicit build step: prepublishOnly runs `npm run build` for us, so
+      # the published dist is always compiled from the commit being published.
+      - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,0 +1,51 @@
+# Actions are pinned by commit SHA rather than by tag. A tag is a moving
+# reference the action's owner can repoint, so `@v4` grants every future v4 the
+# permissions of this job; a SHA is the artifact that was actually reviewed.
+#
+# The integration job deliberately calls test/integration/run.sh rather than
+# declaring a `services:` container. The script starts its own Dovecot, publishes
+# it on loopback, generates the test certificate and seeds the sieve scripts the
+# suite reads; a service container would duplicate half of that and conflict with
+# the rest.
+name: CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # package.json requires Node >= 20, so the floor and the current LTS.
+        node: ['20', '22']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm test
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      # ubuntu-latest ships both docker and openssl, which is everything the
+      # script needs. It removes its container on any exit path.
+      - run: npm run test:integration
