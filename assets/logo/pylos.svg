@@ -1,0 +1,10 @@
+<!-- The keyhole flap: an envelope whose flap is its door, with a cream keyhole
+     punched through it. The flap descends in one curve; the keyhole says the
+     door is locked; the cream is the light allowed through. All filled shapes. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#331F12"/>
+  <rect x="8" y="12" width="48" height="40" rx="4" fill="#F2E9D8"/>
+  <path d="M8 16 Q8 12 12 12 H52 Q56 12 56 16 C51 25 42 33 33.5 38.2 Q32 39.2 30.5 38.2 C22 33 13 25 8 16 Z" fill="#C25E3A"/>
+  <circle cx="32" cy="20.5" r="4.2" fill="#F2E9D8"/>
+  <path d="M29.5 23.5 Q28.5 28.5 27.5 31.5 H36.5 Q35.5 28.5 34.5 23.5 Z" fill="#F2E9D8"/>
+</svg>
