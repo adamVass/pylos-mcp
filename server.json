@@ -1,0 +1,53 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.adamVass/pylos-mcp",
+  "description": "Read-focused, prompt-injection-hardened email MCP server for any IMAP provider",
+  "repository": {
+    "url": "https://github.com/adamVass/pylos-mcp",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "pylos-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "EMAIL_USER",
+          "description": "Account login.",
+          "isRequired": true,
+          "format": "string"
+        },
+        {
+          "name": "EMAIL_PASSWORD",
+          "description": "App password. Either this or EMAIL_PASSWORD_CMD is required.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "PROVIDER",
+          "description": "One of gmail, icloud, yahoo, gmx, fastmail, mailbox.org, posteo. Fills in IMAP, SMTP and Sieve hosts and ports.",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "IMAP_HOST",
+          "description": "IMAP hostname for self-hosted or unlisted providers. Overrides the preset.",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "CAPABILITIES",
+          "description": "Comma-separated list of tiers beyond read, which is always included. Defaults to drafts.",
+          "isRequired": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}
