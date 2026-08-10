@@ -144,7 +144,18 @@ function expandHome(dir: string): string {
   return dir
 }
 
-export function loadConfig(env: Record<string, string | undefined>): Config {
+// MCPB substitutes "" for optional fields left blank, so "" has to read as unset
+function withoutEmptyValues(env: Record<string, string | undefined>): Record<string, string | undefined> {
+  const copy: Record<string, string | undefined> = {}
+  for (const [key, value] of Object.entries(env)) {
+    copy[key] = value === '' ? undefined : value
+  }
+  return copy
+}
+
+export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
+  const env = withoutEmptyValues(rawEnv)
+
   const user = requireString('EMAIL_USER', env.EMAIL_USER)
   const password = resolvePassword(env)
 

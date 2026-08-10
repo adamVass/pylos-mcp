@@ -99,6 +99,13 @@ describe('loadConfig', () => {
   it('detector toggles reject values that are not true or false', () => {
     expect(() => loadConfig({ ...BASE, FLAG_HIDDEN_TEXT: 'yes' })).toThrow(ConfigError)
   })
+  it('treats empty env values as unset', () => {
+    expect(loadConfig({ ...BASE, IMAP_HOST: '' }).imap.host).toBe('imap.mailbox.org')
+    expect(loadConfig({ ...BASE, PROVIDER: '', IMAP_HOST: 'mail.x.example' }).imap.host).toBe('mail.x.example')
+    expect(loadConfig({ ...BASE, MAX_BODY_KB: '' }).maxBodyKb).toBe(64)
+    expect(loadConfig({ ...BASE, SEND_SAVE_COPY: '' }).sendSaveCopy).toBe(true)
+    expect([...loadConfig({ ...BASE, CAPABILITIES: '' }).capabilities].sort()).toEqual(['drafts', 'read'])
+  })
   it('STRIP_HIDDEN_TEXT=true with FLAG_HIDDEN_TEXT=false is refused as inert', () => {
     expect(() => loadConfig({ ...BASE, STRIP_HIDDEN_TEXT: 'true', FLAG_HIDDEN_TEXT: 'false' })).toThrow(ConfigError)
     expect(loadConfig({ ...BASE, STRIP_HIDDEN_TEXT: 'true' }).detect.stripHiddenText).toBe(true)

@@ -87,7 +87,7 @@ Warnings annotate, they never withhold. The message always comes back, and each 
 
 ## Configuration reference
 
-All configuration is environment variables, validated at startup. Invalid configuration fails immediately with an actionable message, never partway through a conversation.
+All configuration is environment variables, validated at startup. Invalid configuration fails immediately with an actionable message, never partway through a conversation. An empty value counts as unset, since bundle managers fill optional fields users leave blank with empty strings.
 
 | Variable | Default | Notes |
 |---|---|---|
