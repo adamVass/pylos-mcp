@@ -1,6 +1,6 @@
 {
   "name": "pylos-mcp",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "mcpName": "io.github.adamVass/pylos-mcp",
   "description": "Read-focused, prompt-injection-hardened email MCP server for any IMAP provider",
   "keywords": [
