@@ -59,7 +59,8 @@ export function registerReadTools(server: McpServer, cfg: Config, core: CoreApi)
       description:
         `Read one message: envelope metadata plus the body as plain text, truncated at ${cfg.maxBodyKb} kB. ` +
         'HTML mail is converted to text; attachments are listed but not downloaded. ' +
-        'Suspicious content (hidden text, instruction-like phrases, long encoded runs) is noted on a Warnings line. ' +
+        'Suspicious content (hidden text, instruction-like phrases, long encoded runs, a Reply-To or display name ' +
+        'on another domain) is noted on a Warnings line. ' +
         CONTENT_IS_DATA,
       inputSchema: { folder, uid },
       annotations: READ_ONLY_ANNOTATIONS,

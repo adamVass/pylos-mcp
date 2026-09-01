@@ -16,6 +16,7 @@ const DETECT_OFF: DetectOptions = {
   hiddenText: false,
   instructionPatterns: false,
   encodedBlobs: false,
+  senderMismatch: false,
   stripHiddenText: false,
   extraPatterns: [],
 }
@@ -24,6 +25,7 @@ const DETECT_ON: DetectOptions = {
   hiddenText: true,
   instructionPatterns: true,
   encodedBlobs: true,
+  senderMismatch: true,
 }
 
 const email = (over = {}) => ({
@@ -32,6 +34,9 @@ const email = (over = {}) => ({
   date: new Date('2026-08-05T10:00:00Z'),
   sizeBytes: 4200,
   from: makeUntrusted('Alice <alice@x.example>'),
+  fromName: makeUntrusted('Alice'),
+  fromAddress: makeUntrusted('alice@x.example'),
+  replyTo: [],
   to: makeUntrusted('adam@x.example'),
   subject: makeUntrusted('Hi'),
   body: makeUntrusted('Plain body'),
@@ -382,6 +387,27 @@ it('strip mode cannot resurrect a fence forgery through the serializer round tri
   expect(out).not.toContain('secret text')
   expect(out).toContain('‹‹‹END UNTRUSTED EMAIL CONTENT>>>')
   expect(out.split(FENCE_CLOSE).length - 1).toBe(1)
+})
+
+// the warning names the mismatch and the fenced line is where the address it
+// found may be read, so the two have to arrive together
+it('a mismatching Reply-To warns outside the fence and is shown inside it', () => {
+  const out = renderEmail(email({ replyTo: [makeUntrusted('billing@evil.example')] }), 64, DETECT_ON)
+  const head = out.slice(0, out.indexOf(FENCE_OPEN))
+  const fenced = out.slice(out.indexOf(FENCE_OPEN), out.indexOf(FENCE_CLOSE))
+
+  expect(head).toContain('sender_mismatch (')
+  expect(head).not.toContain('evil.example')
+  const fencedLines = fenced.split('\n')
+  expect(fencedLines[1]).toMatch(/^From:/)
+  expect(fencedLines[2]).toBe('Reply-To: billing@evil.example')
+})
+
+it('a Reply-To that only repeats From, with or without its name, is not printed', () => {
+  const bare = renderEmail(email({ replyTo: [makeUntrusted('alice@x.example')] }), 64, DETECT_ON)
+  expect(bare).not.toContain('Reply-To:')
+  const named = renderEmail(email({ replyTo: [makeUntrusted('Alice <alice@x.example>')] }), 64, DETECT_ON)
+  expect(named).not.toContain('Reply-To:')
 })
 
 it('a plain-text body never trips hidden_text', () => {

@@ -7,7 +7,7 @@ import { DomUtils, parseDocument } from 'htmlparser2'
 import { stripInvisible } from './html.js'
 
 export interface ContentFlag {
-  detector: 'hidden_text' | 'instruction_patterns' | 'encoded_blob'
+  detector: 'hidden_text' | 'instruction_patterns' | 'encoded_blob' | 'sender_mismatch'
   note: string
 }
 
@@ -15,6 +15,7 @@ export interface DetectOptions {
   hiddenText: boolean
   instructionPatterns: boolean
   encodedBlobs: boolean
+  senderMismatch: boolean
   stripHiddenText: boolean
   extraPatterns: string[] // lowercased literal phrases
 }
@@ -198,6 +199,60 @@ function matchedPatterns(text: string, extraPatterns: readonly string[]): number
 function qualifyingRun(text: string): { chars: number; hex: boolean } | null {
   const run = longestRun(text)
   return run.chars >= (run.hex ? HEX_MIN : BASE64_MIN) ? run : null
+}
+
+export interface SenderFields {
+  fromName: string
+  fromAddress: string
+  replyTo: string[]
+}
+
+/** `Name <local@domain>` and a bare address both arrive here, and no `@` means no domain rather than an error */
+function domainOf(address: string): string {
+  const angled = /<([^>]*)>/.exec(address)
+  const raw = angled?.[1] ?? address
+  const at = raw.lastIndexOf('@')
+  if (at === -1) return ''
+  return raw
+    .slice(at + 1)
+    .trim()
+    .toLowerCase()
+}
+
+// A dot-suffix either way is the same domain, so mail.acme.com stays quiet
+// against acme.com without a public-suffix list. The dot carries that rule:
+// without it, evilacme.com would pass as acme.com too.
+function sameDomain(a: string, b: string): boolean {
+  return a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`)
+}
+
+function foreignTo(domain: string, from: string): boolean {
+  return domain !== '' && !sameDomain(domain, from)
+}
+
+// Address-shaped only: a bare domain-shaped token would flag names like
+// "Node.js Weekly".
+const ADDRESS_IN_NAME = /[^\s@<>]+@[^\s@<>]+/g
+
+/**
+ * The Sender header is deliberately not consulted, because it diverges from
+ * From on every mailing list.
+ */
+export function detectSender(fields: SenderFields, opts: DetectOptions): ContentFlag | undefined {
+  if (!opts.senderMismatch) return undefined
+
+  const from = domainOf(fields.fromAddress)
+  if (from === '') return undefined
+
+  const notes: string[] = []
+  if (fields.replyTo.some((address) => foreignTo(domainOf(address), from))) {
+    notes.push('Reply-To domain differs from From')
+  }
+  if ((fields.fromName.match(ADDRESS_IN_NAME) ?? []).some((token) => foreignTo(domainOf(token), from))) {
+    notes.push('display name carries an address on another domain')
+  }
+
+  return notes.length > 0 ? { detector: 'sender_mismatch', note: notes.join(', ') } : undefined
 }
 
 export function detectText(text: string, opts: DetectOptions): ContentFlag[] {

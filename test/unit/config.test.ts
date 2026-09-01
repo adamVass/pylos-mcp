@@ -88,9 +88,14 @@ describe('loadConfig', () => {
       hiddenText: true,
       instructionPatterns: true,
       encodedBlobs: true,
+      senderMismatch: true,
       stripHiddenText: false,
       extraPatterns: [],
     })
+  })
+  it('FLAG_SENDER_MISMATCH defaults on and turns off', () => {
+    expect(loadConfig(BASE).detect.senderMismatch).toBe(true)
+    expect(loadConfig({ ...BASE, FLAG_SENDER_MISMATCH: 'false' }).detect.senderMismatch).toBe(false)
   })
   it('FLAG_EXTRA_PATTERNS splits on pipes, trims, lowercases and drops empties', () => {
     const cfg = loadConfig({ ...BASE, FLAG_EXTRA_PATTERNS: ' Reply Only In Base64 | | do the secret step ' })

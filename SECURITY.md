@@ -18,6 +18,22 @@ specific mailbox state, describe it rather than sharing credentials: this
 project's own testing never touches a real mailbox (see below), and reports
 should hold to the same standard.
 
+## Design notes
+
+Details behind the guarantees the README states, kept here so the README stays
+readable.
+
+The lines that reach the model unfenced are the metadata line above a message,
+the one-sentence confirmation a tool returns after it acts, and the Warnings
+line. Each is server-authored, stripped of hidden characters, collapsed onto a
+single line and length-capped. The Warnings line reports only the server's own
+labels and counts, never message content.
+
+Sieve write access is excluded rather than guarded because scanning uploaded
+scripts for dangerous commands would only be safe if this project's parser
+agreed with the mail server's parser exactly. Any disagreement between the two
+is a bypass, so write access is not offered at all.
+
 ## Testing policy
 
 Every test in this repository runs against a disposable local Dovecot

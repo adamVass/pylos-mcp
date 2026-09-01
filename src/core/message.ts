@@ -36,6 +36,12 @@ export async function getEmail(
       date: message.envelope?.date ?? null,
       sizeBytes: message.size ?? 0,
       from: makeUntrusted(formatAddress(message.envelope?.from?.[0])),
+      fromName: makeUntrusted(message.envelope?.from?.[0]?.name ?? ''),
+      fromAddress: makeUntrusted(message.envelope?.from?.[0]?.address ?? ''),
+      replyTo: (message.envelope?.replyTo ?? [])
+        .map(formatAddress)
+        .filter(Boolean)
+        .map((address) => makeUntrusted(address)),
       to: makeUntrusted((message.envelope?.to ?? []).map(formatAddress).filter(Boolean).join(', ')),
       subject: makeUntrusted(message.envelope?.subject ?? ''),
       body: makeUntrusted(bodyPart ? await downloadText(client, uid, bodyPart, maxBodyKb) : ''),

@@ -1,6 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { type DetectOptions, detectText, inspectHtml } from '../../src/safety/detect.js'
+import {
+  type DetectOptions,
+  type SenderFields,
+  detectSender,
+  detectText,
+  inspectHtml,
+} from '../../src/safety/detect.js'
 
 const fixture = (name: string): string =>
   readFileSync(new URL(`../fixtures/adversarial/${name}`, import.meta.url), 'utf8')
@@ -9,6 +15,7 @@ const ALL_ON: DetectOptions = {
   hiddenText: true,
   instructionPatterns: true,
   encodedBlobs: true,
+  senderMismatch: true,
   stripHiddenText: false,
   extraPatterns: [],
 }
@@ -213,5 +220,73 @@ describe('encoded_blob', () => {
     const flags = detectText(`${'QUJD'.repeat(150)} ${'QUJD'.repeat(150)}`, ALL_ON)
     expect(flags.find((f) => f.detector === 'encoded_blob')?.note).toBe('base64 run of 600 characters')
     expect(detectText('word '.repeat(500), ALL_ON)).toEqual([])
+  })
+})
+
+describe('sender_mismatch', () => {
+  const sender = (over: Partial<SenderFields> = {}): SenderFields => ({
+    fromName: 'Acme Billing',
+    fromAddress: 'billing@acme.example',
+    replyTo: [],
+    ...over,
+  })
+
+  const REPLY_TO_NOTE = 'Reply-To domain differs from From'
+  const NAME_NOTE = 'display name carries an address on another domain'
+
+  it('a Reply-To on another domain flags without naming it', () => {
+    const flag = detectSender(sender({ replyTo: ['Acme Billing <billing@evil.example>'] }), ALL_ON)
+    expect(flag?.detector).toBe('sender_mismatch')
+    expect(flag?.note).toBe(REPLY_TO_NOTE)
+    expect(flag?.note).not.toContain('@')
+    expect(flag?.note).not.toContain('evil')
+  })
+
+  it('a different local part on the From domain is quiet', () => {
+    expect(detectSender(sender({ replyTo: ['support@ACME.example'] }), ALL_ON)).toBeUndefined()
+  })
+
+  // the dot is what the suffix rule turns on, so the lookalike belongs in the
+  // same case as the subdomains it must not be confused with
+  it('a subdomain either way is the same domain, a lookalike domain is not', () => {
+    expect(detectSender(sender({ replyTo: ['support@mail.acme.example'] }), ALL_ON)).toBeUndefined()
+    const fromSubdomain = sender({ fromAddress: 'billing@mail.acme.example', replyTo: ['support@acme.example'] })
+    expect(detectSender(fromSubdomain, ALL_ON)).toBeUndefined()
+    expect(detectSender(sender({ replyTo: ['support@evilacme.example'] }), ALL_ON)?.note).toBe(REPLY_TO_NOTE)
+  })
+
+  it('nothing to compare is quiet: no Reply-To, or a From carrying no address', () => {
+    expect(detectSender(sender(), ALL_ON)).toBeUndefined()
+    expect(detectSender(sender({ fromAddress: 'not an address', replyTo: ['billing@evil.example'] }), ALL_ON)).toBe(
+      undefined,
+    )
+  })
+
+  it('a display name carrying an address on another domain flags', () => {
+    const spoofed = sender({ fromName: 'Acme Billing billing@acme.example', fromAddress: 'collector@evil.example' })
+    expect(detectSender(spoofed, ALL_ON)?.note).toBe(NAME_NOTE)
+  })
+
+  it('a display name carrying an address on the From domain is quiet', () => {
+    expect(detectSender(sender({ fromName: 'Acme Billing <support@acme.example>' }), ALL_ON)).toBeUndefined()
+  })
+
+  it('a bare domain-shaped name is not an address', () => {
+    const newsletter = sender({ fromName: 'Node.js Weekly', fromAddress: 'news@nodeweekly.example' })
+    expect(detectSender(newsletter, ALL_ON)).toBeUndefined()
+  })
+
+  it('both signals arrive as one flag naming both', () => {
+    const spoofed = sender({
+      fromName: 'Acme Billing billing@acme.example',
+      fromAddress: 'collector@evil.example',
+      replyTo: ['collector@other.example'],
+    })
+    expect(detectSender(spoofed, ALL_ON)?.note).toBe(`${REPLY_TO_NOTE}, ${NAME_NOTE}`)
+  })
+
+  it('the toggle turns the detector off', () => {
+    const opts = { ...ALL_ON, senderMismatch: false }
+    expect(detectSender(sender({ replyTo: ['billing@evil.example'] }), opts)).toBeUndefined()
   })
 })

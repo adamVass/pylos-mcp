@@ -14,15 +14,15 @@ It runs on your machine and speaks plain IMAP, so it works with Gmail, iCloud, Y
 
 Mail is attacker-controlled text, so the hard limits live in the architecture rather than in a prompt. No message can talk the server out of any of these.
 
-- **No raw HTML ever reaches the model.** Bodies come from the plain-text part when one exists or are converted to text otherwise, and invisible characters that could hide instructions from a human reader while staying readable to a model are stripped along the way.
-- **Untrusted content is fenced.** Everything that came from a mailbox, bodies, subjects, sender names, folder listings, Sieve script text, is wrapped in a labeled delimiter before the model sees it, and the delimiter sequence is neutralized wherever it appears inside the content, so a malicious email cannot forge a closing marker and write instructions outside the fence. The few lines that live outside the fence (the metadata line above a message, the one-sentence confirmations a tool returns after it acts, the Warnings line) are server-authored, stripped of hidden characters, collapsed onto a single line and length-capped, and the Warnings line never carries message content at all.
-- **No `bcc` field exists anywhere**, not on drafts and not on sent mail. A bcc recipient receives a full copy of a message while appearing nowhere in it, and that invisibility is exactly what an injected email would want, a silent extra recipient that no review of the draft or of the sent copy could ever catch. The field is absent rather than guarded, so there is nothing to talk the model into.
+- **No raw HTML ever reaches the model.** Bodies come from the plain-text part when one exists or are converted to text otherwise. Invisible characters that hide instructions from a human reader while staying readable to a model are stripped.
+- **Untrusted content is fenced.** Everything from the mailbox, bodies, subjects, sender names, folder listings, Sieve script text, is wrapped in a labeled delimiter before the model sees it, and the delimiter is neutralized inside the content, so a message cannot forge its way out of the fence. The few lines outside it are server-authored and never carry message content.
+- **No `bcc` field exists anywhere**, on drafts or sent mail. A bcc recipient receives a full copy of a message while appearing nowhere in it, exactly the invisibility an injected email wants. The field is absent rather than guarded, so there is nothing to talk the model into.
 - **Deleting a message moves it to Trash.** There is no expunge and no permanent-delete option, and the tool result never claims a permanence this server does not offer.
-- **Sieve access is read-only, permanently.** Server-side filter rules can forward, auto-reply and notify, each an exfiltration channel that survives revoking the app password or uninstalling this server. Scanning uploaded scripts for dangerous commands would only be safe if this project's parser agreed with the mail server's parser exactly, and any disagreement between the two is a bypass, so write access is left out entirely rather than defended.
+- **Sieve access is read-only, permanently.** Server-side filter rules can forward, auto-reply and notify, each an exfiltration channel that survives revoking the app password or uninstalling this server. Write access is left out entirely, not defended.
 
-Sending is the other risky door, so it starts closed even once the `send` capability is on. Until `SEND_ALLOWLIST` says who may be addressed, every send is refused, and the refusal names the two ways to open the gate. Choosing `SEND_ALLOWLIST=*` allows anyone, visibly and on purpose.
+Sending is the other risky door, so it starts closed even with the `send` capability on. Until `SEND_ALLOWLIST` says who may be addressed, every send is refused, and the refusal names the two ways to open the gate. `SEND_ALLOWLIST=*` allows anyone, visibly and on purpose.
 
-Fencing reduces prompt-injection risk, nothing eliminates it. The model still reads text written by strangers, so treat every response that includes message content as untrusted input rather than ground truth.
+Fencing reduces prompt-injection risk, nothing eliminates it. The model still reads text written by strangers, so treat every response that includes message content as untrusted input, not ground truth. The finer design notes live in [SECURITY.md](SECURITY.md).
 
 ## Quick start
 
@@ -44,13 +44,13 @@ Add the server to your MCP client's config. For Claude Desktop that file is `cla
 }
 ```
 
-Use an app password rather than your account's regular login password, the next section says which providers insist on one. Restart the client and the read and draft tools appear. Later config changes need the same treatment, a newly enabled capability only registers its tools after a full client restart, and in Claude Desktop toggling the server off and on is not always enough.
+Use an app password, not your account's regular login password. The next section says which providers insist on one. Restart the client and the read and draft tools appear. Later config changes need the same treatment, a newly enabled capability only registers its tools after a full client restart, and in Claude Desktop toggling the server off and on is not always enough.
 
 ## Provider setup
 
 Set `PROVIDER` to one of `gmail`, `icloud`, `yahoo`, `gmx`, `fastmail`, `mailbox.org` or `posteo` and the matching IMAP, SMTP and Sieve hosts and ports fill themselves in.
 
-Gmail, iCloud, Yahoo and Fastmail refuse regular account passwords over IMAP, so an app password is the only way in. Google only offers one once 2-Step Verification is on, and iCloud wants two-factor authentication on the Apple ID first. mailbox.org, GMX and Posteo accept the account password, though a dedicated app password is still the wiser choice. Each provider's account settings cover creating one.
+Gmail, iCloud, Yahoo and Fastmail refuse regular account passwords over IMAP, so an app password is the only way in. Google only offers one once 2-Step Verification is on, and iCloud wants two-factor authentication on the Apple ID first. mailbox.org, GMX and Posteo accept the account password, though an app password is still the wiser choice.
 
 Proton Mail goes through Bridge. Leave `PROVIDER` unset and set `IMAP_HOST` and `IMAP_PORT` to what Bridge shows. The username is the address Bridge tells you to use, and the password is the one in Bridge's Mailbox details, IMAP section, not your Proton account password. Bridge defaults to STARTTLS while this server only speaks implicit TLS, so switch Bridge to SSL in its Advanced Settings. Bridge's certificate is self-signed, so export it and point `TLS_CA_FILE` at it.
 
@@ -58,7 +58,7 @@ Self-hosted servers also leave `PROVIDER` unset. Set `IMAP_HOST`, plus `SMTP_HOS
 
 ## Capabilities
 
-Capabilities are independent switches, not a ladder. Reading is always on, drafting starts on, everything else stays off until you list it in `CAPABILITIES`. A switched-off tier has its tools left out of the tool list entirely rather than merely refused, so a model never even learns a disabled tool exists.
+Capabilities are independent switches, not a ladder. Reading is always on, drafting starts on, everything else stays off until you list it in `CAPABILITIES`. A switched-off tier has its tools left out of the tool list entirely, not merely refused, so a model never learns a disabled tool exists.
 
 | Tier | Default | Tools |
 |---|---|---|
@@ -73,15 +73,16 @@ Enable more with a comma-separated list, for example `CAPABILITIES=drafts,manage
 
 ## Suspicion warnings
 
-The server also tells you what is suspicious about a message. Three detectors annotate `get_email` results with a line above the content, written entirely in the server's own words and never quoting the content that tripped them.
+The server also tells you what is suspicious about a message. Four detectors annotate `get_email` results with a line above the content, written entirely in the server's own words and never quoting the content that tripped them.
 
 ```
 Warnings: hidden_text (412 hidden characters via display:none), encoded_blob (base64 run of 600 characters)
 ```
 
-- **Hidden text.** Text concealed with the common CSS tricks, `display:none`, invisible or one-pixel fonts, matching text and background colors, off-screen positioning, `aria-hidden`. It covers inline styles and attributes, a tripwire rather than a rendering engine. Newsletters legitimately hide short preview text, so the warning fires only past a threshold, unless the hidden text itself contains an instruction-like phrase or an encoded run, which warns at any length. The text stays in the body by default. `STRIP_HIDDEN_TEXT=true` drops it instead, with a note of how much was dropped.
+- **Hidden text.** Text concealed with the common CSS tricks, `display:none`, invisible or one-pixel fonts, matching text and background colors, off-screen positioning, `aria-hidden`. It covers inline styles and attributes, a tripwire, not a rendering engine. Newsletters legitimately hide short preview text, so the warning fires only past a threshold, unless the hidden text itself contains an instruction-like phrase or an encoded run, which warns at any length. The text stays in the body by default. `STRIP_HIDDEN_TEXT=true` drops it instead, with a note of how much was dropped.
 - **Instruction patterns.** A deliberately small set of phrases that address an AI as an instruction target, like "ignore previous instructions". Small so that an inbox merely talking about AI stays quiet. Extend it with `FLAG_EXTRA_PATTERNS`, pipe-separated phrases matched as case-insensitive literals.
 - **Encoded blobs.** Long contiguous base64 or hex runs in the body, reported with their length and never decoded.
+- **Sender mismatch.** A Reply-To address on a different domain than the From address, or a From display name carrying an address on a domain the real sender does not use. Subdomains count as the same domain, so a provider replying from one of its own stays quiet. The Reply-To address itself is shown inside the fenced content, so the model can see where a reply would actually go.
 
 Warnings annotate, they never withhold. The message always comes back, and each detector has its own toggle in the reference below.
 
@@ -109,6 +110,7 @@ All configuration is environment variables, validated at startup. Invalid config
 | `FLAG_HIDDEN_TEXT` | `true` | Warn when message HTML hides text with inline styles or `aria-hidden`. |
 | `FLAG_INSTRUCTION_PATTERNS` | `true` | Warn when the body contains phrases addressing an AI as an instruction target. |
 | `FLAG_ENCODED_BLOBS` | `true` | Warn on long contiguous base64 or hex runs in the body. |
+| `FLAG_SENDER_MISMATCH` | `true` | Warn when a Reply-To address sits on a different domain than the From address, or the From display name carries an address on another domain. |
 | `STRIP_HIDDEN_TEXT` | `false` | Drop detected hidden text from the body instead of only warning, with a note of how much was dropped. Requires `FLAG_HIDDEN_TEXT` to stay on, the combination with the detector off is refused at startup. |
 | `FLAG_EXTRA_PATTERNS` | none | Pipe-separated phrases added to the instruction-pattern set, matched as case-insensitive literal substrings. |
 | `TLS_CA_FILE` | none | Path to a PEM CA certificate added as an extra trust anchor, for self-hosted servers with a private CA. Certificate verification cannot be turned off, this only extends what is trusted. Setting it trusts Node's bundled root store plus this file, which means anchors added through `NODE_EXTRA_CA_CERTS` are not in that set. If you rely on those, point `TLS_CA_FILE` at the same certificate. |
