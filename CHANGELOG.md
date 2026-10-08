@@ -2,7 +2,7 @@
 
 Notable changes to pylos-mcp. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.0] - 2026-10-08
 
 ### Security
 
@@ -80,7 +80,7 @@ A configuration that loaded on 0.2.0 can now fail at startup, if `SEND_ALLOWLIST
 - Warnings for hidden text, instruction-like phrases and long encoded runs.
 - Provider presets for Gmail, iCloud, Yahoo, GMX, Fastmail, mailbox.org and Posteo.
 
-[Unreleased]: https://github.com/adamVass/pylos-mcp/compare/v0.3.0...HEAD
+[0.4.0]: https://github.com/adamVass/pylos-mcp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/adamVass/pylos-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/adamVass/pylos-mcp/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/adamVass/pylos-mcp/releases/tag/v0.1.1
