@@ -17,7 +17,6 @@ Contributions that fit the project and are welcome, roughly in order of usefulne
 - Multiple accounts in one server process
 - Reply threading, with References and In-Reply-To on drafts
 - Richer pagination for large mailboxes
-- Sender-mismatch flags: a reply-to that diverges from the sender, a display name that impersonates a different domain
 
 ## Development
 

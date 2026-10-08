@@ -137,12 +137,16 @@ function connectionError(err: unknown, host: string, port: number): ToolError {
     case 'CONNECT_TIMEOUT':
     case 'GREETING_TIMEOUT':
       return new ToolError('connect', `timed out connecting to ${target}. Check the network and any firewall`)
+    case 'ERR_TLS_CERT_ALTNAME_INVALID':
+      return new ToolError(
+        'connect',
+        `the TLS certificate presented by ${target} is not issued for ${host}. Check IMAP_HOST against the name the server's certificate carries`,
+      )
     case 'DEPTH_ZERO_SELF_SIGNED_CERT':
     case 'SELF_SIGNED_CERT_IN_CHAIN':
     case 'UNABLE_TO_VERIFY_LEAF_SIGNATURE':
     case 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY':
     case 'CERT_HAS_EXPIRED':
-    case 'ERR_TLS_CERT_ALTNAME_INVALID':
       return new ToolError(
         'connect',
         `the TLS certificate presented by ${target} could not be verified. If this is a private server with its own CA, ${TLS_CA_ADVICE}`,

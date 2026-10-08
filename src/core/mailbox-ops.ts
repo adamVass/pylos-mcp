@@ -3,6 +3,10 @@ import { MESSAGE_GONE, ToolError } from '../errors.js'
 import type { ImapSession } from './client.js'
 
 const MOVE_FAILED = 'move failed. The destination folder may not exist'
+const TRASH_NEEDS_DELETE =
+  'moving a message to Trash is a delete, and the delete capability is off. Add delete to CAPABILITIES to allow it'
+const ALREADY_IN_TRASH =
+  'this message is already in Trash. pylos-mcp never erases mail, so removing it from Trash is done in your mail client'
 const NO_SAFE_MOVE =
   'this server has no MOVE capability, and pylos-mcp will not emulate one with copy-then-delete: ' +
   'a copy that fails would still delete the source message'
@@ -95,8 +99,36 @@ export interface DeleteResult {
   trashFolder: string
 }
 
+/**
+ * imapflow prefixes a path lacking the personal namespace, so `Trash` reaches
+ * `INBOX.Trash` on servers that nest folders under INBOX. Both sides get the
+ * same prefixing here, then case-folding, since some servers match names
+ * case-insensitively.
+ */
+async function sameFolder(session: ImapSession, a: string, b: string): Promise<boolean> {
+  return session.withClient(async (client) => {
+    // set from the NAMESPACE reply at connect, but missing from imapflow's types
+    const prefix = (client as { namespace?: { prefix?: string } }).namespace?.prefix ?? ''
+    const full = (path: string) =>
+      (path.toUpperCase() === 'INBOX' || path.startsWith(prefix) ? path : prefix + path).toLowerCase()
+    return full(a) === full(b)
+  })
+}
+
+function findTrash(session: ImapSession): Promise<string> {
+  return session.specialUse('\\Trash', 'Trash')
+}
+
+/** without `delete`, moving to Trash is a delete under another name */
+export async function refuseTrash(session: ImapSession, destination: string): Promise<void> {
+  if (await sameFolder(session, destination, await findTrash(session))) {
+    throw new ToolError('policy', TRASH_NEEDS_DELETE)
+  }
+}
+
 export async function deleteEmail(session: ImapSession, folder: string, uid: number): Promise<DeleteResult> {
-  const trashFolder = await session.specialUse('\\Trash', 'Trash')
+  const trashFolder = await findTrash(session)
+  if (await sameFolder(session, folder, trashFolder)) throw new ToolError('policy', ALREADY_IN_TRASH)
   await moveEmail(session, folder, uid, trashFolder)
   return { trashFolder }
 }

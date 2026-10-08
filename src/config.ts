@@ -1,7 +1,9 @@
 import { execSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { z } from 'zod'
+import { isAllowlistEntry } from './core/smtp.js'
 import type { DetectOptions } from './safety/detect.js'
 
 type Capability = 'read' | 'drafts' | 'manage' | 'send' | 'delete' | 'sieve-read'
@@ -82,6 +84,8 @@ function resolveProvider(provider: string | undefined): Preset | undefined {
   return preset
 }
 
+const PASSWORD_CMD_TIMEOUT_MS = 60_000
+
 function resolvePassword(env: Record<string, string | undefined>): string {
   const hasPassword = env.EMAIL_PASSWORD !== undefined
   const hasCmd = env.EMAIL_PASSWORD_CMD !== undefined
@@ -105,9 +109,14 @@ function resolvePassword(env: Record<string, string | undefined>): string {
       output = execSync(env.EMAIL_PASSWORD_CMD as string, {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
+        // stdin is closed, so a command waiting on a prompt would hang startup forever
+        timeout: PASSWORD_CMD_TIMEOUT_MS,
       })
-    } catch {
+    } catch (err) {
       // never echo the command or its output, either may contain secrets
+      if ((err as NodeJS.ErrnoException).code === 'ETIMEDOUT') {
+        throw new ConfigError(`EMAIL_PASSWORD_CMD did not finish within ${PASSWORD_CMD_TIMEOUT_MS / 1000} seconds`)
+      }
       throw new ConfigError('EMAIL_PASSWORD_CMD failed')
     }
     const password = output.replace(/\n$/, '')
@@ -198,6 +207,11 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
           .map((s) => s.trim().toLowerCase())
           .filter(Boolean)
       : undefined
+  // an entry that can never match leaves the gate shut while looking open
+  const unmatchable = sendAllowlist?.find((entry) => !isAllowlistEntry(entry))
+  if (unmatchable !== undefined) {
+    throw new ConfigError(`SEND_ALLOWLIST entry "${unmatchable}" is not an address, *@domain, or *`)
+  }
 
   const sendSaveCopy = booleanEnv('SEND_SAVE_COPY', env.SEND_SAVE_COPY, true)
 
@@ -225,6 +239,14 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
   }
 
   const tlsCaFile = env.TLS_CA_FILE
+  // read again per connection, this read only moves an unreadable file's failure to startup
+  if (tlsCaFile !== undefined) {
+    try {
+      readFileSync(tlsCaFile)
+    } catch {
+      throw new ConfigError(`TLS_CA_FILE could not be read: ${tlsCaFile}`)
+    }
+  }
 
   return {
     user,

@@ -5,7 +5,10 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import type { ImapFlow } from 'imapflow'
-import { moveEmail, setFlags } from '../../src/core/mailbox-ops.js'
+import { makeCoreApi } from '../../src/core/api.js'
+import type { ImapSession } from '../../src/core/client.js'
+import { deleteEmail, moveEmail, setFlags } from '../../src/core/mailbox-ops.js'
+import type { Config } from '../../src/config.js'
 import { fakeSession } from './helpers.js'
 
 function baseClient(overrides: Partial<ImapFlow> = {}): Partial<ImapFlow> {
@@ -39,38 +42,20 @@ describe('moveEmail refuses to emulate MOVE on a server that lacks it', () => {
     expect((error as Error).message.toLowerCase()).not.toContain('permanent')
   })
 
-  it('proceeds when the server advertises MOVE directly', async () => {
-    const messageMove = vi.fn().mockResolvedValue({ path: 'INBOX', destination: 'Archive', uidMap: new Map([[7, 7]]) })
-    const client = baseClient({
-      capabilities: new Map([['MOVE', true]]),
-      messageMove,
-    })
-
-    await expect(moveEmail(fakeSession(client), 'INBOX', 7, 'Archive')).resolves.toBeUndefined()
-    expect(messageMove).toHaveBeenCalledOnce()
-  })
-
-  it('proceeds when IMAP4rev2 folds MOVE in without a separate capability token', async () => {
-    const messageMove = vi.fn().mockResolvedValue({ path: 'INBOX', destination: 'Archive', uidMap: new Map([[7, 7]]) })
-    const client = baseClient({
-      capabilities: new Map([['IMAP4rev2', true]]),
-      messageMove,
-    })
-
-    await expect(moveEmail(fakeSession(client), 'INBOX', 7, 'Archive')).resolves.toBeUndefined()
-    expect(messageMove).toHaveBeenCalledOnce()
-  })
-
-  it('proceeds when IMAP4REV2 was explicitly ENABLEd rather than being the only base protocol', async () => {
-    const messageMove = vi.fn().mockResolvedValue({ path: 'INBOX', destination: 'Archive', uidMap: new Map([[7, 7]]) })
-    const client = baseClient({
-      capabilities: new Map([
+  it.each([
+    ['advertises MOVE directly', new Map([['MOVE', true]]), new Set<string>()],
+    ['folds MOVE into IMAP4rev2 without a separate token', new Map([['IMAP4rev2', true]]), new Set<string>()],
+    [
+      'had IMAP4REV2 explicitly ENABLEd alongside rev1',
+      new Map([
         ['IMAP4rev1', true],
         ['IMAP4rev2', true],
       ]),
-      enabled: new Set(['IMAP4REV2']),
-      messageMove,
-    })
+      new Set(['IMAP4REV2']),
+    ],
+  ])('proceeds when the server %s', async (_name, capabilities, enabled) => {
+    const messageMove = vi.fn().mockResolvedValue({ path: 'INBOX', destination: 'Archive', uidMap: new Map([[7, 7]]) })
+    const client = baseClient({ capabilities, enabled, messageMove } as Partial<ImapFlow>)
 
     await expect(moveEmail(fakeSession(client), 'INBOX', 7, 'Archive')).resolves.toBeUndefined()
     expect(messageMove).toHaveBeenCalledOnce()
@@ -103,5 +88,33 @@ describe('setFlags names the flag that failed', () => {
     const error = await setFlags(fakeSession(client), 'INBOX', 7, { seen: false }).catch((e: Error) => e)
 
     expect((error as Error).message).toContain('clearing \\Seen')
+  })
+})
+
+describe('Trash is reachable only through delete', () => {
+  // a server nesting folders under INBOX, where imapflow prefixes a bare name
+  const trashSession = (withMailbox = vi.fn()) =>
+    ({
+      specialUse: vi.fn().mockResolvedValue('INBOX.Trash'),
+      withClient: (fn: (client: unknown) => unknown) => fn({ namespace: { prefix: 'INBOX.' } }),
+      withMailbox,
+    }) as unknown as ImapSession
+
+  it('move_email refuses Trash, by any spelling that reaches it, while delete is off', async () => {
+    const withMailbox = vi.fn().mockResolvedValue(true)
+    const core = makeCoreApi({ capabilities: new Set(['read', 'manage']) } as Config, trashSession(withMailbox))
+
+    for (const spelling of ['INBOX.Trash', 'Trash', 'trash']) {
+      await expect(core.moveEmail('INBOX', 7, spelling), spelling).rejects.toMatchObject({ code: 'policy' })
+    }
+    expect(withMailbox).not.toHaveBeenCalled()
+    await expect(core.moveEmail('INBOX', 7, 'Archive')).resolves.toBeUndefined()
+  })
+
+  it('delete refuses a message already in Trash rather than reporting a move onto itself', async () => {
+    const withMailbox = vi.fn()
+
+    await expect(deleteEmail(trashSession(withMailbox), 'Trash', 7)).rejects.toMatchObject({ code: 'policy' })
+    expect(withMailbox).not.toHaveBeenCalled()
   })
 })

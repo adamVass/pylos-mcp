@@ -207,13 +207,10 @@ export interface SenderFields {
   replyTo: string[]
 }
 
-/** `Name <local@domain>` and a bare address both arrive here, and no `@` means no domain rather than an error */
 function domainOf(address: string): string {
-  const angled = /<([^>]*)>/.exec(address)
-  const raw = angled?.[1] ?? address
-  const at = raw.lastIndexOf('@')
+  const at = address.lastIndexOf('@')
   if (at === -1) return ''
-  return raw
+  return address
     .slice(at + 1)
     .trim()
     .toLowerCase()

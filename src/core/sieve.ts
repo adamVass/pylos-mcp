@@ -44,7 +44,12 @@ export async function listSieveScripts(cfg: Config): Promise<SieveScriptEntry[]>
   }
 }
 
-export async function getSieveScript(cfg: Config, name: string): Promise<UntrustedText> {
+export interface SieveScript {
+  content: UntrustedText
+  cutShort: boolean
+}
+
+export async function getSieveScript(cfg: Config, name: string): Promise<SieveScript> {
   // interpolated into a protocol command below, so a line break would let a
   // caller append a command of their own
   if (/[\r\n\0]/.test(name)) {
@@ -125,7 +130,7 @@ async function readScriptList(conn: SieveConnection): Promise<SieveScriptEntry[]
  * then a CRLF of framing, then OK. At most `maxBodyKb` plus slack is ever read,
  * so a server cannot make this client hold a script of its choosing.
  */
-async function readScript(conn: SieveConnection, name: string, maxBodyKb: number): Promise<UntrustedText> {
+async function readScript(conn: SieveConnection, name: string, maxBodyKb: number): Promise<SieveScript> {
   conn.write(`GETSCRIPT "${escapeQuoted(name)}"\r\n`)
 
   const line = await conn.readLine()
@@ -146,7 +151,10 @@ async function readScript(conn: SieveConnection, name: string, maxBodyKb: number
     conn.destroy()
   }
 
-  return makeUntrusted(new TextDecoder('utf-8', { fatal: false }).decode(bytes))
+  return {
+    content: makeUntrusted(new TextDecoder('utf-8', { fatal: false }).decode(bytes)),
+    cutShort: declared > limit,
+  }
 }
 
 // --- protocol grammar --------------------------------------------------------

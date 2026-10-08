@@ -30,9 +30,12 @@ export interface RenderableEmail {
   fromName: UntrustedText
   fromAddress: UntrustedText
   replyTo: UntrustedText[]
+  /** bare, because a display name can carry an address of its own */
+  replyToAddresses: UntrustedText[]
   to: UntrustedText
   subject: UntrustedText
   body: UntrustedText
+  bodyCutShort: boolean
   bodyIsHtml: boolean
   attachments: { partId: string; filename: UntrustedText; sizeBytes: number; contentType: string }[]
 }
@@ -51,11 +54,15 @@ export interface RenderableSummary {
 // Both fence markers start with `<<<`, so removing every `<<<` from content
 // makes either marker impossible to forge. Runs AFTER stripInvisible so a
 // zero-width character cannot hide a `<<<` from this pass and then vanish.
+// Combining marks and format characters survive stripping, so the match spans
+// them too: `<\u0301<\u0301<` still reads as `<<<`.
 //
-// The replacement contains no `<`, and replaceAll consumes runs of `<` left to
+// The replacement contains no `<`, and the match consumes runs of `<` left to
 // right, so any surviving run of `<` is at most two characters long.
+const FENCE_START = /<(?:[\p{M}\p{Cf}]*<){2}/gu
+
 function neutralizeFence(s: string): string {
-  return s.replaceAll('<<<', '‹‹‹')
+  return s.replace(FENCE_START, '‹‹‹')
 }
 
 function sanitize(s: string): string {
@@ -130,13 +137,20 @@ function fence(lines: string[]): string[] {
   return [FENCE_OPEN, ...(lines.length > 0 ? lines : ['(none)']), FENCE_CLOSE]
 }
 
+// MAX_BODY_KB bounds the body, and a message declaring thousands of parts would
+// otherwise get around it through the listing
+const MAX_LISTED_ATTACHMENTS = 50
+
 export function renderEmail(e: RenderableEmail, maxBodyKb: number, detect: DetectOptions): string {
   const rawBody = readUntrusted(e.body)
   const flags: ContentFlag[] = []
 
   const fromAddress = readUntrusted(e.fromAddress)
   const replyTo = e.replyTo.map(readUntrusted)
-  const senderFlag = detectSender({ fromName: readUntrusted(e.fromName), fromAddress, replyTo }, detect)
+  const senderFlag = detectSender(
+    { fromName: readUntrusted(e.fromName), fromAddress, replyTo: e.replyToAddresses.map(readUntrusted) },
+    detect,
+  )
   if (senderFlag !== undefined) flags.push(senderFlag)
 
   // hidden_text inspects the HTML because its markers live in markup that
@@ -152,7 +166,7 @@ export function renderEmail(e: RenderableEmail, maxBodyKb: number, detect: Detec
   // HTML is decoded first: entity-encoded markers (`&lt;&lt;&lt;END ...`) would
   // otherwise become live text after neutralization had already run. Truncation
   // is last so its marker can never be cut off.
-  const body = truncateAtKb(sanitize(e.bodyIsHtml ? htmlToPlainText(source) : source), maxBodyKb)
+  const body = truncateAtKb(sanitize(e.bodyIsHtml ? htmlToPlainText(source) : source), maxBodyKb, e.bodyCutShort)
   flags.push(...detectText(body, detect))
 
   // printed so a reply destination is visible, and skipped when it only repeats From
@@ -169,11 +183,13 @@ export function renderEmail(e: RenderableEmail, maxBodyKb: number, detect: Detec
 
   if (e.attachments.length > 0) {
     fenced.push('', 'Attachments:')
-    for (const a of e.attachments) {
+    for (const a of e.attachments.slice(0, MAX_LISTED_ATTACHMENTS)) {
       fenced.push(
         `[part ${line(a.partId)}] ${presentLine(a.filename)}, ${formatSize(a.sizeBytes)}, ${line(a.contentType)}`,
       )
     }
+    const unlisted = e.attachments.length - MAX_LISTED_ATTACHMENTS
+    if (unlisted > 0) fenced.push(`...and ${unlisted} more not listed`)
   }
 
   const out = [
@@ -229,8 +245,14 @@ export function renderFolders(folders: { path: string; specialUse?: string; mess
   return ['Folders:', ...fence(lines)].join('\n')
 }
 
+// The content type is sender text printed outside the fence, so only a bare
+// type/subtype token within RFC 6838's lengths gets through. The path ends in
+// the sender's filename, which can be readable prose, so it goes inside.
+const MIME_TYPE = /^[\w!#$&^.+-]{1,127}\/[\w!#$&^.+-]{1,127}$/
+
 export function renderAttachmentSaved(path: string, sizeBytes: number, contentType: string): string {
-  return `Saved to ${line(path)} (${formatSize(sizeBytes)}, ${line(contentType)})`
+  const type = MIME_TYPE.test(contentType) ? contentType : 'unrecognized type'
+  return [`Saved an attachment (${formatSize(sizeBytes)}, ${type}) to:`, ...fence([line(path)])].join('\n')
 }
 
 export function renderDraftSaved(folder: string, uid: number | null, recipients: string[]): string {
@@ -296,9 +318,13 @@ export function renderDeleted(uid: number, from: string, trashFolder: string): s
 }
 
 /** last step, like renderEmail's, so the truncation marker cannot itself be cut off */
-export function renderSieveScript(name: string, content: UntrustedText, maxBodyKb: number): string {
-  const script = truncateAtKb(present(content), maxBodyKb)
-  return ['Sieve script:', ...fence([`Name: ${line(name)}`, '', script])].join('\n')
+export function renderSieveScript(
+  name: string,
+  script: { content: UntrustedText; cutShort: boolean },
+  maxBodyKb: number,
+): string {
+  const text = truncateAtKb(present(script.content), maxBodyKb, script.cutShort)
+  return ['Sieve script:', ...fence([`Name: ${line(name)}`, '', text])].join('\n')
 }
 
 export function renderSieveList(scripts: { name: UntrustedText; active: boolean }[]): string {

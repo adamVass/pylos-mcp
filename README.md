@@ -71,6 +71,8 @@ Capabilities are independent switches, not a ladder. Reading is always on, draft
 
 Enable more with a comma-separated list, for example `CAPABILITIES=drafts,manage,delete`.
 
+Moving a message into Trash is a delete by another route, so `move_email` refuses Trash unless `delete` is on too.
+
 ## Suspicion warnings
 
 The server also tells you what is suspicious about a message. Four detectors annotate `get_email` results with a line above the content, written entirely in the server's own words and never quoting the content that tripped them.
@@ -95,7 +97,7 @@ All configuration is environment variables, validated at startup. Invalid config
 | `PROVIDER` | none | One of `gmail`, `icloud`, `yahoo`, `gmx`, `fastmail`, `mailbox.org`, `posteo`. Fills in IMAP, SMTP and Sieve hosts and ports. |
 | `EMAIL_USER` | required | Account login. |
 | `EMAIL_PASSWORD` | none | App password. Either this or `EMAIL_PASSWORD_CMD` is required. |
-| `EMAIL_PASSWORD_CMD` | none | Command whose stdout is the password, such as a keychain lookup or `pass`, so the secret never sits in the client's config file. |
+| `EMAIL_PASSWORD_CMD` | none | Command whose stdout is the password, such as a keychain lookup or `pass`, so the secret never sits in the client's config file. It has 60 seconds to finish. |
 | `IMAP_HOST` / `IMAP_PORT` | preset / `993` | Explicit values for self-hosted servers. Set either to override the preset. |
 | `SMTP_HOST` / `SMTP_PORT` | preset / `465` | Required only when `send` is enabled. |
 | `SIEVE_HOST` / `SIEVE_PORT` | `IMAP_HOST` / `4190` | Used only when `sieve-read` is enabled. |
@@ -105,7 +107,7 @@ All configuration is environment variables, validated at startup. Invalid config
 | `DOWNLOAD_DIR` | `~/Downloads` | Where `get_attachment` writes files. |
 | `SEND_SESSION_CAP` | `5` | Successful `send_email` calls allowed per server process lifetime. |
 | `SEND_SAVE_COPY` | `true` | Append a copy of each sent message to the Sent folder, marked read. Turn off for providers that already file sent mail server-side (Gmail does), which would otherwise show duplicates. |
-| `SEND_ALLOWLIST` | none (sending closed) | Comma-separated addresses or `*@domain` patterns, or `*` alone to allow anyone. With `send` enabled and no value set, every send is refused and the refusal explains this variable. An explicitly empty value also allows nobody. |
+| `SEND_ALLOWLIST` | none (sending closed) | Comma-separated addresses or `*@domain` patterns, or `*` alone to allow anyone. With `send` enabled and no value set, every send is refused and the refusal explains this variable. An explicitly empty value also allows nobody. An entry that could never match, such as a bare domain, fails at startup. |
 | `DRAFTS_NO_RECIPIENTS` | `false` | When `true`, `create_draft` rejects `to` and `cc` entirely. Drafts carry no addressing and get it added later in your mail client. |
 | `FLAG_HIDDEN_TEXT` | `true` | Warn when message HTML hides text with inline styles or `aria-hidden`. |
 | `FLAG_INSTRUCTION_PATTERNS` | `true` | Warn when the body contains phrases addressing an AI as an instruction target. |

@@ -17,6 +17,16 @@ describe('sanitizeFilename', () => {
     expect(sanitizeFilename(input)).toEqual(expected)
   })
 
+  // past the filesystem's name limit the open fails, and the attachment cannot be saved at all
+  it('caps a long name in bytes, by whole characters, keeping the extension', () => {
+    for (const stem of ['a'.repeat(300), 'д'.repeat(300)]) {
+      const out = sanitizeFilename(`${stem}.pdf`)
+      expect(Buffer.byteLength(out)).toBeLessThanOrEqual(200)
+      expect(out.endsWith('.pdf')).toBe(true)
+      expect(out).not.toContain('\uFFFD')
+    }
+  })
+
   // U+0085 NEL sits outside the 0x00-0x1F range this class already stripped, and
   // is a line break to plenty of tools
   it('strips U+0085 NEL, which is outside the 0x00-0x1F control range', () => {

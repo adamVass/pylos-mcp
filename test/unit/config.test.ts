@@ -78,6 +78,19 @@ describe('loadConfig', () => {
     const c = loadConfig({ ...BASE, CAPABILITIES: 'send', SEND_ALLOWLIST: 'Bob@X.example, *@Corp.example' })
     expect(c.sendAllowlist).toEqual(['bob@x.example', '*@corp.example'])
   })
+  // a bare domain looks like it opens the gate and silently matches nobody
+  it('rejects SEND_ALLOWLIST entries that can never match', () => {
+    for (const entry of ['corp.example', '@corp.example', 'bob', '*@*.corp.example']) {
+      expect(
+        () => loadConfig({ ...BASE, CAPABILITIES: 'send', SEND_ALLOWLIST: `bob@x.example, ${entry}` }),
+        entry,
+      ).toThrow(ConfigError)
+    }
+    expect(loadConfig({ ...BASE, CAPABILITIES: 'send', SEND_ALLOWLIST: '*' }).sendAllowlist).toEqual(['*'])
+  })
+  it('an unreadable TLS_CA_FILE fails at startup, not at the first tool call', () => {
+    expect(() => loadConfig({ ...BASE, TLS_CA_FILE: '/nonexistent/ca.pem' })).toThrow(ConfigError)
+  })
   it('rejects non-numeric ports and knobs', () => {
     expect(() => loadConfig({ ...BASE, IMAP_PORT: 'abc' })).toThrow(ConfigError)
     expect(() => loadConfig({ ...BASE, MAX_BODY_KB: '-1' })).toThrow(ConfigError)
@@ -92,10 +105,6 @@ describe('loadConfig', () => {
       stripHiddenText: false,
       extraPatterns: [],
     })
-  })
-  it('FLAG_SENDER_MISMATCH defaults on and turns off', () => {
-    expect(loadConfig(BASE).detect.senderMismatch).toBe(true)
-    expect(loadConfig({ ...BASE, FLAG_SENDER_MISMATCH: 'false' }).detect.senderMismatch).toBe(false)
   })
   it('FLAG_EXTRA_PATTERNS splits on pipes, trims, lowercases and drops empties', () => {
     const cfg = loadConfig({ ...BASE, FLAG_EXTRA_PATTERNS: ' Reply Only In Base64 | | do the secret step ' })

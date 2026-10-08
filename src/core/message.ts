@@ -9,11 +9,19 @@ import { MESSAGE_GONE, ToolError } from '../errors.js'
 import { sanitizeFilename, uniquePath } from '../safety/filename.js'
 import { readLimitBytes } from '../safety/limits.js'
 import { formatMb, type RenderableEmail } from '../safety/render.js'
-import { makeUntrusted } from '../safety/untrusted.js'
+import { makeUntrusted, type UntrustedText } from '../safety/untrusted.js'
 
 interface MessagePart {
   id: string
   node: MessageStructureObject
+}
+
+type BodyText = Pick<RenderableEmail, 'body' | 'bodyCutShort'>
+
+const NO_BODY: BodyText = { body: makeUntrusted(''), bodyCutShort: false }
+
+function untrustedList(values: string[]): UntrustedText[] {
+  return values.filter(Boolean).map((value) => makeUntrusted(value))
 }
 
 /** bounds the exclusive-create retry so a pathological directory cannot spin it forever */
@@ -29,6 +37,8 @@ export async function getEmail(
     const message = await fetchMessage(client, uid)
     const parts = leafParts(message.bodyStructure)
     const bodyPart = chooseBodyPart(parts)
+    const body = bodyPart ? await downloadText(client, uid, bodyPart, maxBodyKb) : NO_BODY
+    const replyTo = message.envelope?.replyTo ?? []
 
     return {
       folder,
@@ -38,13 +48,11 @@ export async function getEmail(
       from: makeUntrusted(formatAddress(message.envelope?.from?.[0])),
       fromName: makeUntrusted(message.envelope?.from?.[0]?.name ?? ''),
       fromAddress: makeUntrusted(message.envelope?.from?.[0]?.address ?? ''),
-      replyTo: (message.envelope?.replyTo ?? [])
-        .map(formatAddress)
-        .filter(Boolean)
-        .map((address) => makeUntrusted(address)),
+      replyTo: untrustedList(replyTo.map(formatAddress)),
+      replyToAddresses: untrustedList(replyTo.map((entry) => entry.address ?? '')),
       to: makeUntrusted((message.envelope?.to ?? []).map(formatAddress).filter(Boolean).join(', ')),
       subject: makeUntrusted(message.envelope?.subject ?? ''),
-      body: makeUntrusted(bodyPart ? await downloadText(client, uid, bodyPart, maxBodyKb) : ''),
+      ...body,
       bodyIsHtml: bodyPart?.node.type === 'text/html',
       attachments: parts.filter((part) => part !== bodyPart && isAttachment(part.node)).map(toAttachment),
     }
@@ -227,18 +235,28 @@ function toAttachment(part: MessagePart): RenderableEmail['attachments'][number]
   }
 }
 
-/** a body is meant to be truncated, so `maxBytes` carries none of the silent-corruption risk that rules it out for downloads */
-async function downloadText(client: ImapFlow, uid: number, part: MessagePart, maxBodyKb: number): Promise<string> {
-  const download = await client.download(String(uid), part.id, {
-    uid: true,
-    maxBytes: readLimitBytes(maxBodyKb),
-  })
+/**
+ * A body is meant to be truncated, so `maxBytes` carries none of the
+ * silent-corruption risk that rules it out for downloads. The cut is reported
+ * because conversion and stripping can shrink a cut body back under the cap,
+ * and the one byte past the limit tells a cut body from one ending exactly there.
+ */
+async function downloadText(client: ImapFlow, uid: number, part: MessagePart, maxBodyKb: number): Promise<BodyText> {
+  const limit = readLimitBytes(maxBodyKb)
+  const download = await client.download(String(uid), part.id, { uid: true, maxBytes: limit + 1 })
   if (!download?.content) throw new ToolError('not_found', MESSAGE_GONE)
 
   const chunks: Buffer[] = []
   for await (const chunk of download.content) chunks.push(chunk as Buffer)
 
-  return decodeText(Buffer.concat(chunks), download.meta?.charset ?? part.node.parameters?.charset)
+  const bytes = Buffer.concat(chunks)
+  const cutShort = bytes.length > limit
+  return {
+    body: makeUntrusted(
+      decodeText(cutShort ? bytes.subarray(0, limit) : bytes, download.meta?.charset ?? part.node.parameters?.charset),
+    ),
+    bodyCutShort: cutShort,
+  }
 }
 
 /**

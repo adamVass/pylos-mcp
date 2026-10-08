@@ -8,14 +8,16 @@ export function readLimitBytes(kb: number): number {
   return kb * 1000 + SLACK_BYTES
 }
 
-export function truncateAtKb(s: string, kb: number): string {
+/** `cutShort` keeps the marker on a source cut before conversion shrank it under the cap */
+export function truncateAtKb(s: string, kb: number, cutShort = false): string {
   const limitBytes = kb * 1000
-  if (Buffer.byteLength(s) <= limitBytes) return s
+  const marker = `\n[truncated at ${kb} kB]`
+  if (Buffer.byteLength(s) <= limitBytes) return cutShort ? `${s}${marker}` : s
 
   const sliced = Buffer.from(s, 'utf8').subarray(0, limitBytes)
   // a non-fatal decode replaces a trailing partial multi-byte char with U+FFFD
   // rather than throwing, so those come off the tail
   const decoded = new TextDecoder('utf-8').decode(sliced).replace(/�+$/, '')
 
-  return `${decoded}\n[truncated at ${kb} kB]`
+  return `${decoded}${marker}`
 }

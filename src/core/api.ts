@@ -4,14 +4,13 @@
 import type { Config } from '../config.js'
 import { ToolError } from '../errors.js'
 import type { RenderableEmail, RenderableSummary } from '../safety/render.js'
-import type { UntrustedText } from '../safety/untrusted.js'
 import type { ImapSession } from './client.js'
 import { createDraft, type DraftArgs, type DraftResult } from './draft.js'
 import { listFolders, type FolderSummary } from './folders.js'
-import { deleteEmail, moveEmail, setFlags, type DeleteResult } from './mailbox-ops.js'
+import { deleteEmail, moveEmail, refuseTrash, setFlags, type DeleteResult } from './mailbox-ops.js'
 import { getAttachment, getEmail, type AttachmentResult } from './message.js'
 import { searchEmails, type SearchArgs } from './search.js'
-import { getSieveScript, listSieveScripts, type SieveScriptEntry } from './sieve.js'
+import { getSieveScript, listSieveScripts, type SieveScript, type SieveScriptEntry } from './sieve.js'
 import { SendState, sendEmail, type SendArgs, type SendResult } from './smtp.js'
 
 export interface CoreApi {
@@ -25,7 +24,7 @@ export interface CoreApi {
   deleteEmail(folder: string, uid: number): Promise<DeleteResult>
   sendEmail(args: SendArgs): Promise<SendResult>
   listSieveScripts(): Promise<SieveScriptEntry[]>
-  getSieveScript(name: string): Promise<UntrustedText>
+  getSieveScript(name: string): Promise<SieveScript>
 }
 
 export function makeCoreApi(cfg: Config, session: ImapSession): CoreApi {
@@ -41,7 +40,10 @@ export function makeCoreApi(cfg: Config, session: ImapSession): CoreApi {
     // if a future change registered a tool without also gating it.
     createDraft: cfg.capabilities.has('drafts') ? (args) => createDraft(session, cfg, args) : notEnabled,
     moveEmail: cfg.capabilities.has('manage')
-      ? (folder, uid, dest) => moveEmail(session, folder, uid, dest)
+      ? async (folder, uid, dest) => {
+          if (!cfg.capabilities.has('delete')) await refuseTrash(session, dest)
+          await moveEmail(session, folder, uid, dest)
+        }
       : notEnabled,
     setFlags: cfg.capabilities.has('manage')
       ? (folder, uid, flags) => setFlags(session, folder, uid, flags)

@@ -35,6 +35,9 @@ async function main(): Promise<void> {
   }
   process.once('SIGINT', shutdown)
   process.once('SIGTERM', shutdown)
+  // a client may close the pipe without a signal, and the open IMAP connection
+  // would keep an orphan alive holding one of the account's connection slots
+  process.stdin.once('end', shutdown)
 
   // stdout carries MCP protocol frames exclusively, so every diagnostic in this
   // codebase goes to stderr

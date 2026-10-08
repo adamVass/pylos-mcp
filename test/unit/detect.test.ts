@@ -235,7 +235,7 @@ describe('sender_mismatch', () => {
   const NAME_NOTE = 'display name carries an address on another domain'
 
   it('a Reply-To on another domain flags without naming it', () => {
-    const flag = detectSender(sender({ replyTo: ['Acme Billing <billing@evil.example>'] }), ALL_ON)
+    const flag = detectSender(sender({ replyTo: ['billing@evil.example'] }), ALL_ON)
     expect(flag?.detector).toBe('sender_mismatch')
     expect(flag?.note).toBe(REPLY_TO_NOTE)
     expect(flag?.note).not.toContain('@')

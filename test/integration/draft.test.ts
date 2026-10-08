@@ -291,6 +291,7 @@ describe('createDraft against a local Dovecot container', () => {
 
     await expect(createDraft(session, cfg, { subject: 's', body: 'b', to: ['a@b.example'] })).rejects.toMatchObject({
       code: 'policy',
+      message: expect.stringContaining('DRAFTS_NO_RECIPIENTS'),
     })
     await expect(createDraft(session, cfg, { subject: 's', body: 'b', cc: ['a@b.example'] })).rejects.toMatchObject({
       code: 'policy',
@@ -303,15 +304,5 @@ describe('createDraft against a local Dovecot container', () => {
     const parsed = await simpleParser(await draftSource(ok.uid!))
     expect(parsed.to).toBeUndefined()
     expect(parsed.cc).toBeUndefined()
-  })
-
-  itIntegration('the policy message names the env var that caused the refusal', async () => {
-    const cfg = testConfig({ DRAFTS_NO_RECIPIENTS: 'true' })
-    const error = await createDraft(session, cfg, { subject: 's', body: 'b', to: ['a@b.example'] }).catch(
-      (e: Error) => e,
-    )
-
-    expect(error).toBeInstanceOf(Error)
-    expect((error as Error).message).toContain('DRAFTS_NO_RECIPIENTS')
   })
 })

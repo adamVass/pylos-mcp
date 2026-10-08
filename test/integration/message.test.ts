@@ -145,6 +145,7 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
     expect(readUntrusted(email.body)).toContain('the plain part')
     expect(readUntrusted(email.body)).not.toContain('<b>')
     expect(email.bodyIsHtml).toBe(false)
+    expect(email.bodyCutShort).toBe(false)
 
     expect(email.attachments).toHaveLength(2)
     const names = email.attachments.map((a) => readUntrusted(a.filename))
@@ -271,6 +272,7 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
     // producing a short body with no marker.
     expect(bodyBytes).toBeGreaterThan(64_000)
     expect(bodyBytes).toBeLessThan(66_000)
+    expect(email.bodyCutShort).toBe(true)
     expect(LONG_BODY_BYTES).toBeGreaterThan(100_000)
     expect(readUntrusted(email.body).startsWith('дд')).toBe(true)
   })
@@ -293,28 +295,16 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
     // its client lazily and privately.
     const spy = vi.spyOn(ImapFlow.prototype, 'download')
     try {
-      await expect(getAttachment(session, cfg, FOLDER, uidBig, bigPartId)).rejects.toMatchObject({
-        code: 'cap_exceeded',
-      })
+      const error = await getAttachment(session, cfg, FOLDER, uidBig, bigPartId).catch((e: Error) => e)
+      expect(error).toMatchObject({ code: 'cap_exceeded' })
+      // names the size, the cap and the variable that raises it
+      expect((error as Error).message).toMatch(/1\.6 MB.*1 MB.*MAX_ATTACHMENT_MB/)
       expect(spy).not.toHaveBeenCalled()
     } finally {
       spy.mockRestore()
     }
 
     expect(readdirSync(downloadDir).sort()).toEqual(filesBefore)
-  })
-
-  itIntegration('the cap_exceeded message names the size, the cap and the env var', async () => {
-    const cfg = testConfig({ DOWNLOAD_DIR: downloadDir, MAX_ATTACHMENT_MB: '1' })
-    const bigPartId = await partIdFor(uidBig, 'huge.bin')
-
-    const error = await getAttachment(session, cfg, FOLDER, uidBig, bigPartId).catch((e: Error) => e)
-
-    expect(error).toBeInstanceOf(Error)
-    const message = (error as Error).message
-    expect(message).toContain('MAX_ATTACHMENT_MB')
-    expect(message).toMatch(/1\.6 MB/)
-    expect(message).toContain('1 MB')
   })
 
   itIntegration('an attachment under the cap still downloads when a cap is set', async () => {
