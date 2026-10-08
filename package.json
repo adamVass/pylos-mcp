@@ -62,6 +62,6 @@
     "mailparser": "^3.7.0",
     "smtp-server": "^3.13.0",
     "typescript": "^5.6.0",
-    "vitest": "^3.0.0"
+    "vitest": "^4.1.11"
   }
 }
