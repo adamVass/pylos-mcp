@@ -1,3 +1,4 @@
+import { execFile } from 'node:child_process'
 import { mkdir, open, unlink } from 'node:fs/promises'
 import { Transform, type Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -279,6 +280,18 @@ async function makeDownloadDir(dir: string): Promise<void> {
   }
 }
 
+const XATTR_TIMEOUT_MS = 5_000
+
+// Mail and browsers flag every download, so a saved .app would otherwise skip Gatekeeper. No shell, so the path is never interpreted.
+function quarantine(path: string): Promise<void> {
+  const value = `0081;${Math.floor(Date.now() / 1000).toString(16)};pylos-mcp;`
+  return new Promise((resolve, reject) => {
+    execFile('/usr/bin/xattr', ['-w', 'com.apple.quarantine', value, path], { timeout: XATTR_TIMEOUT_MS }, (err) =>
+      err ? reject(err) : resolve(),
+    )
+  })
+}
+
 /**
  * `uniquePath` picks a free name with an existsSync probe, which says nothing
  * about the moment of the open that follows. Creating with "wx" fails instead
@@ -297,13 +310,27 @@ async function writeExclusive(
 
       let handle
       try {
-        handle = await open(candidate, 'wx')
+        handle = await open(candidate, 'wx', 0o600)
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code === 'EEXIST') continue
         throw new ToolError(
           'policy',
           `could not write to the download directory ${dir}. Check DOWNLOAD_DIR and its permissions`,
         )
+      }
+
+      // before the first byte, so no unflagged copy of the file ever exists
+      if (process.platform === 'darwin') {
+        try {
+          await quarantine(candidate)
+        } catch {
+          await handle.close().catch(() => undefined)
+          await unlink(candidate).catch(() => undefined)
+          throw new ToolError(
+            'policy',
+            'the attachment was not saved because macOS could not mark it as downloaded, which is what makes Gatekeeper check it before it opens',
+          )
+        }
       }
 
       const stream = handle.createWriteStream()

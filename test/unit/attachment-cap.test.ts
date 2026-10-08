@@ -1,13 +1,22 @@
-import { mkdtempSync, readdirSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { mkdtempSync, readdirSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadConfig } from '../../src/config.js'
 import type { ImapSession } from '../../src/core/client.js'
 import { collectAttachments } from '../../src/core/draft.js'
 import { getAttachment } from '../../src/core/message.js'
 import { fakeSession } from './helpers.js'
+
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>()
+  return {
+    ...actual,
+    execFile: vi.fn((_file: string, _args: string[], _opts: object, done: (err: Error | null) => void) => done(null)),
+  }
+})
 
 // Both cases need a server that misreports its own BODYSTRUCTURE, which the
 // Dovecot harness cannot be made to do: it always declares a size, and always the
@@ -92,5 +101,66 @@ describe('the attachment cap does not trust the declared size', () => {
     ).rejects.toMatchObject({ code: 'cap_exceeded' })
 
     expect(yielded).toBeLessThan(50)
+  })
+})
+
+describe('saving an attachment', () => {
+  const realPlatform = process.platform
+  const onPlatform = (p: NodeJS.Platform) => Object.defineProperty(process, 'platform', { value: p })
+  const xattr = vi.mocked(execFile)
+  const succeed = ((_file: string, _args: string[], _opts: object, done: (err: Error | null) => void) =>
+    done(null)) as never
+
+  beforeEach(() => {
+    xattr.mockReset()
+    xattr.mockImplementation(succeed)
+  })
+  afterEach(() => {
+    onPlatform(realPlatform)
+    xattr.mockReset()
+    xattr.mockImplementation(succeed)
+  })
+
+  it('writes the file readable by its owner only, and leaves xattr alone off macOS', async () => {
+    onPlatform('linux')
+    const dir = mkdtempSync(join(tmpdir(), 'pylos-save-'))
+    const { session } = stubSession({ ...PART, size: 5 }, [Buffer.from('hello')])
+
+    const saved = await getAttachment(session, config(dir), 'INBOX', 7, '1')
+
+    expect(statSync(saved.path).mode & 0o777).toBe(0o600)
+    expect(xattr).not.toHaveBeenCalled()
+  })
+
+  it('on macOS, quarantines the file before its first byte is written', async () => {
+    onPlatform('darwin')
+    let sizeWhenFlagged = -1
+    xattr.mockImplementation(((_file: string, args: string[], _opts: object, done: (err: Error | null) => void) => {
+      sizeWhenFlagged = statSync(args[3]).size
+      done(null)
+    }) as never)
+    const dir = mkdtempSync(join(tmpdir(), 'pylos-save-'))
+    const { session } = stubSession({ ...PART, size: 5 }, [Buffer.from('hello')])
+
+    const saved = await getAttachment(session, config(dir), 'INBOX', 7, '1')
+
+    expect(xattr).toHaveBeenCalledWith(
+      '/usr/bin/xattr',
+      ['-w', 'com.apple.quarantine', expect.stringMatching(/^0081;[0-9a-f]+;pylos-mcp;$/), saved.path],
+      expect.objectContaining({ timeout: expect.any(Number) }),
+      expect.any(Function),
+    )
+    expect(sizeWhenFlagged).toBe(0)
+  })
+
+  it('on macOS, a file that cannot be quarantined is not kept', async () => {
+    onPlatform('darwin')
+    xattr.mockImplementation(((_file: string, _args: string[], _opts: object, done: (err: Error | null) => void) =>
+      done(new Error('operation not permitted'))) as never)
+    const dir = mkdtempSync(join(tmpdir(), 'pylos-save-'))
+    const { session } = stubSession({ ...PART, size: 5 }, [Buffer.from('hello')])
+
+    await expect(getAttachment(session, config(dir), 'INBOX', 7, '1')).rejects.toMatchObject({ code: 'policy' })
+    expect(readdirSync(dir)).toEqual([])
   })
 })

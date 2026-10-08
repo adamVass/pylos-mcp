@@ -29,6 +29,23 @@ line. Each is server-authored, stripped of hidden characters, collapsed onto a
 single line and length-capped. The Warnings line reports only the server's own
 labels and counts, never message content.
 
+Each fence carries a random tag chosen fresh for every tool call, on both
+markers and on a reminder line after the closing one. Content cannot start a
+marker, and a sender who types a lookalike marker cannot know the tag it would
+need.
+
+The mixed-script warning knows only Cyrillic and Greek letters that look like
+Latin ones. Fullwidth Latin and the mathematical alphanumeric letters are
+outside it, the same tripwire stance the other detectors take.
+
+HTML nested deeper than 500 levels is cut at that depth and marked as omitted.
+Real mail stays far below it, and the parsers fail well above it.
+
+Saved attachments are readable by their owner only. On macOS each one also
+gets the quarantine flag that browsers and Mail set, before any of its bytes
+are written, so opening a saved app goes through Gatekeeper. If the flag cannot
+be set, the file is not saved.
+
 Sieve write access is excluded rather than guarded because scanning uploaded
 scripts for dangerous commands would only be safe if this project's parser
 agreed with the mail server's parser exactly. Any disagreement between the two

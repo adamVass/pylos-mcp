@@ -75,16 +75,17 @@ Moving a message into Trash is a delete by another route, so `move_email` refuse
 
 ## Suspicion warnings
 
-The server also tells you what is suspicious about a message. Four detectors annotate `get_email` results with a line above the content, written entirely in the server's own words and never quoting the content that tripped them.
+The server also tells you what is suspicious about a message. Five detectors annotate `get_email` results with a line above the content, written entirely in the server's own words and never quoting the content that tripped them.
 
 ```
 Warnings: hidden_text (412 hidden characters via display:none), encoded_blob (base64 run of 600 characters)
 ```
 
 - **Hidden text.** Text concealed with the common CSS tricks, `display:none`, invisible or one-pixel fonts, matching text and background colors, off-screen positioning, `aria-hidden`. It covers inline styles and attributes, a tripwire, not a rendering engine. Newsletters legitimately hide short preview text, so the warning fires only past a threshold, unless the hidden text itself contains an instruction-like phrase or an encoded run, which warns at any length. The text stays in the body by default. `STRIP_HIDDEN_TEXT=true` drops it instead, with a note of how much was dropped.
-- **Instruction patterns.** A deliberately small set of phrases that address an AI as an instruction target, like "ignore previous instructions". Small so that an inbox merely talking about AI stays quiet. Extend it with `FLAG_EXTRA_PATTERNS`, pipe-separated phrases matched as case-insensitive literals.
+- **Instruction patterns.** A deliberately small set of phrases that address an AI as an instruction target, like "ignore previous instructions". Small so that an inbox merely talking about AI stays quiet. Extend it with `FLAG_EXTRA_PATTERNS`, pipe-separated phrases matched as case-insensitive literals. Subjects, sender lines and attachment names are checked as well as the body, and extra spaces or line breaks inside a phrase do not hide it.
 - **Encoded blobs.** Long contiguous base64 or hex runs in the body, reported with their length and never decoded.
 - **Sender mismatch.** A Reply-To address on a different domain than the From address, or a From display name carrying an address on a domain the real sender does not use. Subdomains count as the same domain, so a provider replying from one of its own stays quiet. The Reply-To address itself is shown inside the fenced content, so the model can see where a reply would actually go.
+- **Mixed scripts.** Words that mix Latin letters with Cyrillic or Greek letters drawn to look like Latin ones, such as a "paypal" spelled with a Cyrillic а. Only lookalike letters count, so units like `μm` and ordinary Russian or Greek text stay quiet.
 
 Warnings annotate, they never withhold. The message always comes back, and each detector has its own toggle in the reference below.
 
@@ -110,9 +111,10 @@ All configuration is environment variables, validated at startup. Invalid config
 | `SEND_ALLOWLIST` | none (sending closed) | Comma-separated addresses or `*@domain` patterns, or `*` alone to allow anyone. With `send` enabled and no value set, every send is refused and the refusal explains this variable. An explicitly empty value also allows nobody. An entry that could never match, such as a bare domain, fails at startup. |
 | `DRAFTS_NO_RECIPIENTS` | `false` | When `true`, `create_draft` rejects `to` and `cc` entirely. Drafts carry no addressing and get it added later in your mail client. |
 | `FLAG_HIDDEN_TEXT` | `true` | Warn when message HTML hides text with inline styles or `aria-hidden`. |
-| `FLAG_INSTRUCTION_PATTERNS` | `true` | Warn when the body contains phrases addressing an AI as an instruction target. |
+| `FLAG_INSTRUCTION_PATTERNS` | `true` | Warn when the body, subject, sender line or attachment names contain phrases addressing an AI as an instruction target. |
 | `FLAG_ENCODED_BLOBS` | `true` | Warn on long contiguous base64 or hex runs in the body. |
 | `FLAG_SENDER_MISMATCH` | `true` | Warn when a Reply-To address sits on a different domain than the From address, or the From display name carries an address on another domain. |
+| `FLAG_MIXED_SCRIPT` | `true` | Warn when a word mixes Latin letters with Cyrillic or Greek lookalikes. |
 | `STRIP_HIDDEN_TEXT` | `false` | Drop detected hidden text from the body instead of only warning, with a note of how much was dropped. Requires `FLAG_HIDDEN_TEXT` to stay on, the combination with the detector off is refused at startup. |
 | `FLAG_EXTRA_PATTERNS` | none | Pipe-separated phrases added to the instruction-pattern set, matched as case-insensitive literal substrings. |
 | `TLS_CA_FILE` | none | Path to a PEM CA certificate added as an extra trust anchor, for self-hosted servers with a private CA. Certificate verification cannot be turned off, this only extends what is trusted. Setting it trusts Node's bundled root store plus this file, which means anchors added through `NODE_EXTRA_CA_CERTS` are not in that set. If you rely on those, point `TLS_CA_FILE` at the same certificate. |

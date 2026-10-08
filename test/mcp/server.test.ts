@@ -7,7 +7,8 @@ import { makeCoreApi, type CoreApi } from '../../src/core/api.js'
 import { ImapSession } from '../../src/core/client.js'
 import { ToolError } from '../../src/errors.js'
 import { buildServer } from '../../src/mcp/server.js'
-import { FENCE_CLOSE, FENCE_OPEN } from '../../src/safety/render.js'
+import { FENCE_CLOSE, FENCE_OPEN, fenceMarkers } from '../../src/safety/render.js'
+import { nonceOf } from '../unit/helpers.js'
 import { makeUntrusted } from '../../src/safety/untrusted.js'
 
 const BASE_ENV = { EMAIL_USER: 'tester@example.com', EMAIL_PASSWORD: 'pw', IMAP_HOST: 'localhost' }
@@ -286,12 +287,14 @@ it('get_attachment reports the saved file in metric units and passes part_id thr
   const { text, isError } = await call(client, 'get_attachment', { folder: 'INBOX', uid: 7, part_id: '2' })
 
   expect(isError).toBe(false)
+  const { open, close, reminder } = fenceMarkers(nonceOf(text))
   expect(text).toBe(
     [
       'Saved an attachment (1.2 MB, application/pdf) to:',
-      FENCE_OPEN,
+      open,
       '/home/tester/Downloads/report.pdf',
-      FENCE_CLOSE,
+      close,
+      reminder,
     ].join('\n'),
   )
   expect(calls.getAttachment).toEqual(['INBOX', 7, '2'])

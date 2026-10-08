@@ -221,6 +221,7 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
   const instructionPatterns = booleanEnv('FLAG_INSTRUCTION_PATTERNS', env.FLAG_INSTRUCTION_PATTERNS, true)
   const encodedBlobs = booleanEnv('FLAG_ENCODED_BLOBS', env.FLAG_ENCODED_BLOBS, true)
   const senderMismatch = booleanEnv('FLAG_SENDER_MISMATCH', env.FLAG_SENDER_MISMATCH, true)
+  const mixedScript = booleanEnv('FLAG_MIXED_SCRIPT', env.FLAG_MIXED_SCRIPT, true)
   const stripHiddenText = booleanEnv('STRIP_HIDDEN_TEXT', env.STRIP_HIDDEN_TEXT, false)
 
   // pipes, not commas: a phrase may contain a comma, and phrases are the whole
@@ -263,6 +264,14 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
     sendSaveCopy,
     draftsNoRecipients,
     tlsCaFile,
-    detect: { hiddenText, instructionPatterns, encodedBlobs, senderMismatch, stripHiddenText, extraPatterns },
+    detect: {
+      hiddenText,
+      instructionPatterns,
+      encodedBlobs,
+      senderMismatch,
+      mixedScript,
+      stripHiddenText,
+      extraPatterns,
+    },
   }
 }

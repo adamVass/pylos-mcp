@@ -13,12 +13,29 @@ import { INVISIBLE_CLASS } from './invisible.js'
 // is left to render.ts's `line`.
 const INVISIBLE_CHARS = new RegExp(`[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F${INVISIBLE_CLASS}]`, 'gu')
 
+// real mail nests tens of levels, html-to-text fails near 2000 and DomUtils near 4000
+export const MAX_HTML_DEPTH = 500
+export const DEPTH_OMITTED = `[content nested deeper than ${MAX_HTML_DEPTH} levels omitted]`
+
+const ONE_LINE = { leadingLineBreaks: 1, trailingLineBreaks: 1 }
+
 export function htmlToPlainText(html: string): string {
   return convert(html, {
     wordwrap: false,
+    limits: { maxDepth: MAX_HTML_DEPTH, ellipsis: DEPTH_OMITTED },
     selectors: [
       { selector: 'img', format: 'skip' },
       { selector: 'a', options: { hideLinkHrefIfSameAsText: true } },
+      // uppercasing turns μ and µ into Greek capital mu, which mixed_script reads as a spoofed M
+      ...['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].map((selector) => ({ selector, options: { uppercase: false } })),
+      // inline by default, so adjacent cells fuse into one word or one long digit run the detectors misread
+      // and a line break alone is not enough: encoded runs may span lines
+      ...['tr', 'dt'].map((selector) => ({ selector, format: 'block', options: ONE_LINE })),
+      ...['td', 'th', 'dd'].map((selector) => ({
+        selector,
+        format: 'inlineSurround',
+        options: { prefix: '', suffix: ' ' },
+      })),
     ],
   })
 }

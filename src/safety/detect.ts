@@ -2,12 +2,12 @@
 // never decides whether to return it. Every note is built from this module's own
 // labels and counts: quoting the content that tripped a detector would hand the
 // warning line itself to the attacker.
-import type { AnyNode, Element } from 'domhandler'
+import type { AnyNode, Element, ParentNode } from 'domhandler'
 import { DomUtils, parseDocument } from 'htmlparser2'
-import { stripInvisible } from './html.js'
+import { DEPTH_OMITTED, MAX_HTML_DEPTH, stripInvisible } from './html.js'
 
 export interface ContentFlag {
-  detector: 'hidden_text' | 'instruction_patterns' | 'encoded_blob' | 'sender_mismatch'
+  detector: 'hidden_text' | 'instruction_patterns' | 'encoded_blob' | 'sender_mismatch' | 'mixed_script'
   note: string
 }
 
@@ -16,6 +16,7 @@ export interface DetectOptions {
   instructionPatterns: boolean
   encodedBlobs: boolean
   senderMismatch: boolean
+  mixedScript: boolean
   stripHiddenText: boolean
   extraPatterns: string[] // lowercased literal phrases
 }
@@ -88,9 +89,27 @@ function offScreen(value: string | undefined): boolean {
 // preview text, which runs 35 to 90 characters.
 const HIDDEN_TEXT_FLOOR = 100
 
+// Iterative, so pruning a hostile document cannot itself overflow the stack.
+function capDepth(root: ParentNode): void {
+  const pending: [ParentNode, number][] = [[root, 0]]
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    const [parent, depth] = next
+    for (const child of parent.children) {
+      if (!DomUtils.hasChildren(child)) continue
+      if (depth + 1 < MAX_HTML_DEPTH) {
+        pending.push([child, depth + 1])
+        continue
+      }
+      for (const grandchild of [...child.children]) DomUtils.removeElement(grandchild)
+      DomUtils.appendChild(child, parseDocument(DEPTH_OMITTED).children[0])
+    }
+  }
+}
+
 /** the `hiddenText` toggle is the caller's to check, not this function's */
 export function inspectHtml(html: string, opts: DetectOptions): HtmlInspection {
   const doc = parseDocument(html)
+  capDepth(doc)
   const mechanisms = new Set<Mechanism>()
   const hidden: Element[] = []
   const texts: string[] = []
@@ -191,9 +210,16 @@ function longestRun(text: string): { chars: number; hex: boolean } {
   return { chars: best, hex: bestHex }
 }
 
+// U+0085 is listed because `\s` does not match it.
+const WHITESPACE_RUN = /[\s\u0085]+/g
+
+function normalized(s: string): string {
+  return s.toLowerCase().replace(WHITESPACE_RUN, ' ')
+}
+
 function matchedPatterns(text: string, extraPatterns: readonly string[]): number {
-  const haystack = text.toLowerCase()
-  return [...BUILTIN_PATTERNS, ...extraPatterns].filter((p) => haystack.includes(p)).length
+  const haystack = normalized(text)
+  return [...BUILTIN_PATTERNS, ...extraPatterns].filter((p) => haystack.includes(normalized(p))).length
 }
 
 function qualifyingRun(text: string): { chars: number; hex: boolean } | null {
@@ -252,21 +278,81 @@ export function detectSender(fields: SenderFields, opts: DetectOptions): Content
   return notes.length > 0 ? { detector: 'sender_mismatch', note: notes.join(', ') } : undefined
 }
 
-export function detectText(text: string, opts: DetectOptions): ContentFlag[] {
+// Chrome's per-word IDN spoof rule (UTS #39 Latin lookalikes), so μm and WiFiроутер stay quiet.
+const LOOKALIKES = new Set([
+  // Cyrillic lowercase: а е о р с у х ѕ і ј һ ԁ ԛ ԝ
+  ...'\u0430\u0435\u043e\u0440\u0441\u0443\u0445\u0455\u0456\u0458\u04bb\u0501\u051b\u051d',
+  // Cyrillic uppercase: А В Е К М Н О Р С Т Х І Ј Ѕ
+  ...'\u0410\u0412\u0415\u041a\u041c\u041d\u041e\u0420\u0421\u0422\u0425\u0406\u0408\u0405',
+  // Greek lowercase: ο ν ρ ϲ
+  ...'\u03bf\u03bd\u03c1\u03f2',
+  // Greek uppercase: Α Β Ε Ζ Η Ι Κ Μ Ν Ο Ρ Τ Υ Χ
+  ...'\u0391\u0392\u0395\u0396\u0397\u0399\u039a\u039c\u039d\u039f\u03a1\u03a4\u03a5\u03a7',
+])
+const WORD = /[\p{L}\p{M}]+/gu
+const LATIN = /\p{Script=Latin}/u
+const CYRILLIC_OR_GREEK = /[\p{Script=Cyrillic}\p{Script=Greek}]/u
+
+function spoofedWords(text: string): number {
+  let count = 0
+  for (const [word] of text.matchAll(WORD)) {
+    const letters = [...word]
+    const foreign = letters.filter((c) => CYRILLIC_OR_GREEK.test(c))
+    if (foreign.length > 0 && foreign.every((c) => LOOKALIKES.has(c)) && letters.some((c) => LATIN.test(c))) {
+      count += 1
+    }
+  }
+  return count
+}
+
+export type RegionName = 'From' | 'subject' | 'body' | 'attachment names'
+
+export interface TextRegion {
+  name: RegionName
+  text: string
+}
+
+export function detectText(regions: TextRegion[], opts: DetectOptions): ContentFlag[] {
   const flags: ContentFlag[] = []
 
   if (opts.instructionPatterns) {
-    const matched = matchedPatterns(text, opts.extraPatterns)
+    let matched = 0
+    const where: RegionName[] = []
+    for (const region of regions) {
+      const n = matchedPatterns(region.text, opts.extraPatterns)
+      if (n === 0) continue
+      matched += n
+      where.push(region.name)
+    }
     if (matched > 0) {
       flags.push({
         detector: 'instruction_patterns',
-        note: `${matched} instruction-like phrase${matched === 1 ? '' : 's'} matched`,
+        note: `${matched} instruction-like phrase${matched === 1 ? '' : 's'} matched in ${where.join(', ')}`,
       })
     }
   }
 
-  if (opts.encodedBlobs) {
-    const run = qualifyingRun(text)
+  if (opts.mixedScript) {
+    let words = 0
+    const where: RegionName[] = []
+    for (const region of regions) {
+      const n = spoofedWords(region.text)
+      if (n === 0) continue
+      words += n
+      where.push(region.name)
+    }
+    if (words > 0) {
+      flags.push({
+        detector: 'mixed_script',
+        note: `${words} word${words === 1 ? '' : 's'} mixing Latin with lookalike Cyrillic or Greek letters in ${where.join(', ')}`,
+      })
+    }
+  }
+
+  // the README promises this one for the body alone
+  const body = regions.find((r) => r.name === 'body')
+  if (opts.encodedBlobs && body !== undefined) {
+    const run = qualifyingRun(body.text)
     if (run !== null) {
       flags.push({ detector: 'encoded_blob', note: `${run.hex ? 'hex' : 'base64'} run of ${run.chars} characters` })
     }

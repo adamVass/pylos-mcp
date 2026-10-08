@@ -102,6 +102,7 @@ describe('loadConfig', () => {
       instructionPatterns: true,
       encodedBlobs: true,
       senderMismatch: true,
+      mixedScript: true,
       stripHiddenText: false,
       extraPatterns: [],
     })
