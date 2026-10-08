@@ -7,9 +7,9 @@ Every step here is run manually by the repository owner. Nothing in CI publishes
 1. Date the release in `CHANGELOG.md`. After tagging, paste the same section into a GitHub Release on the tag, which is where people watching the repository see it.
 2. Review and commit. The tree ships exactly what was reviewed.
 3. Check the version. `package.json` carries the version npm will publish, and the release workflow's guard refuses a tag that disagrees with it.
-4. Run `npm publish`. `prepublishOnly` builds first, and the `files` field limits the package to `dist`. `package.json` ships alongside it either way, `mcpName` included, which is what makes a registry listing possible later.
+4. Push a signed version tag. `.github/workflows/release.yml` runs the gates again and publishes through npm trusted publishing, which attaches provenance, something a local `npm publish` cannot produce and that cannot be added to a version afterwards. `prepublishOnly` builds first, and the `files` field limits the package to `dist`. `package.json` ships alongside it, `mcpName` included, which is what makes a registry listing possible.
 
-   Chosen vehicle: local `npm publish`. The workflow in `.github/workflows/release.yml` stays as the alternative: it publishes from Actions on a version tag and adds npm provenance attestation, which a local publish cannot produce and which cannot be added to a version after the fact. It cannot publish until `NPM_TOKEN` is configured, so switching vehicles later takes a token and a tag. A version tag pushed before the token exists produces a failed run rather than a publish.
+   The workflow holds no npm token. It publishes only because the package's trusted publisher on npmjs.com (Settings, Trusted Publisher, GitHub Actions) names `adamVass/pylos-mcp` and `release.yml`. npm expires a new trusted publisher entry that has not published within two days, so add or replace one right before tagging.
 
 5. Verify the one-liner. From a clean directory, `npx -y pylos-mcp` should start and immediately fail with the configuration error naming `EMAIL_USER`, which proves the published binary resolves and runs.
 
