@@ -146,7 +146,7 @@ describe('searchEmails against a local Dovecot container', () => {
     expect(newest.folder).toBe('INBOX')
     expect(newest.uid).toBeGreaterThan(0)
     expect(newest.sizeBytes).toBeGreaterThan(0)
-    expect(newest.date?.toISOString()).toBe(headerDate(11).toISOString())
+    expect(newest.date).toEqual(headerDate(11))
     expect(newest.seen).toBe(false)
     expect(newest.flagged).toBe(false)
   })

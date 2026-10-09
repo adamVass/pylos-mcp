@@ -2,6 +2,16 @@
 
 Notable changes to pylos-mcp. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] - 2026-10-09
+
+### Fixed
+
+- A message whose Date header could not be parsed made `get_email` fail with an internal error, and took down every `search_emails` page it appeared on. Its date now shows as unknown.
+
+### Changed
+
+- The README opens with an animated example of what the server finds in one message, and the setup instructions now come before the security details.
+
 ## [0.4.0] - 2026-10-08
 
 ### Security
@@ -80,6 +90,7 @@ A configuration that loaded on 0.2.0 can now fail at startup, if `SEND_ALLOWLIST
 - Warnings for hidden text, instruction-like phrases and long encoded runs.
 - Provider presets for Gmail, iCloud, Yahoo, GMX, Fastmail, mailbox.org and Posteo.
 
+[0.4.1]: https://github.com/adamVass/pylos-mcp/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/adamVass/pylos-mcp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/adamVass/pylos-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/adamVass/pylos-mcp/compare/v0.1.1...v0.2.0

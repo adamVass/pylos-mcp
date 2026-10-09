@@ -116,6 +116,21 @@ it('search results are fenced and list uid, ISO date, from, subject', () => {
   expect(out).toContain('2026-01-02')
   expect(out).toContain('unread')
 })
+it('a Date header imapflow could not parse renders as unknown instead of failing', () => {
+  const date = 'Mon, 32 Jan 2026 10:00:00 +0000'
+  expect(renderEmail(email({ date }), 64, DETECT_OFF)).toContain('Date: unknown\n')
+  const row = {
+    folder: 'INBOX',
+    uid: 3,
+    date,
+    sizeBytes: 1,
+    from: makeUntrusted('b'),
+    subject: makeUntrusted('s'),
+    seen: true,
+    flagged: false,
+  }
+  expect(renderSearchResults(1, 0, [row])).toContain('INBOX uid 3 | unknown |')
+})
 
 // pins the pipeline order: if neutralization ran before HTML-to-text,
 // entity-encoded markers would decode into a live fence after it had run

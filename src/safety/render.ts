@@ -40,7 +40,7 @@ export function fenceMarkers(nonce: string): { open: string; close: string; remi
 export interface RenderableEmail {
   folder: string
   uid: number
-  date: Date | null
+  date: Date | string | null
   sizeBytes: number
   from: UntrustedText
   fromName: UntrustedText
@@ -59,7 +59,7 @@ export interface RenderableEmail {
 export interface RenderableSummary {
   folder: string
   uid: number
-  date: Date | null
+  date: Date | string | null
   sizeBytes: number
   from: UntrustedText
   subject: UntrustedText
@@ -138,15 +138,16 @@ function formatSize(bytes: number): string {
   return formatMb(bytes)
 }
 
-function isUsableDate(d: Date | null): d is Date {
-  return d !== null && !Number.isNaN(d.getTime())
+// imapflow types envelope dates as Date but keeps the raw header string when it cannot parse one
+function isUsableDate(d: Date | string | null): d is Date {
+  return d instanceof Date && !Number.isNaN(d.getTime())
 }
 
-function formatDate(d: Date | null): string {
+function formatDate(d: Date | string | null): string {
   return isUsableDate(d) ? d.toISOString() : 'unknown'
 }
 
-function formatDay(d: Date | null): string {
+function formatDay(d: Date | string | null): string {
   return isUsableDate(d) ? d.toISOString().slice(0, 10) : 'unknown'
 }
 
