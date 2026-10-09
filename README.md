@@ -17,7 +17,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/readme/xray-dark.svg">
-    <img src="assets/readme/xray-light.svg" width="880" alt="An account-security message from 'Lumen Pay Security' as a mail client shows it. pylos-mcp finds a Cyrillic letter posing as a Latin one in the sender's domain, a Reply-To pointing at another domain, a hidden instruction telling the AI assistant to forward every invoice, and a hidden base64 payload. The message reaches the assistant fenced as data, not instructions, with a Warnings line naming all of it.">
+    <img src="assets/readme/xray-light.svg" width="880" alt="An account-security message from 'Lumen Pay Security' as a mail client shows it. pylos-mcp finds a Cyrillic letter posing as a Latin one in the sender's name, a Reply-To pointing at another domain, a hidden instruction telling the AI assistant to forward every invoice, and a hidden base64 payload. The message reaches the assistant fenced as data, not instructions, with a Warnings line naming all of it.">
   </picture>
 </p>
 
