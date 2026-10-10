@@ -13,6 +13,7 @@ export interface SearchArgs {
   since?: Date
   before?: Date
   unreadOnly?: boolean
+  flaggedOnly?: boolean
   limit: number
   offset: number
 }
@@ -50,6 +51,7 @@ function criteria(args: SearchArgs): SearchObject {
   if (args.since) search.since = args.since
   if (args.before) search.before = args.before
   if (args.unreadOnly) search.seen = false
+  if (args.flaggedOnly) search.flagged = true
   return search
 }
 
@@ -58,7 +60,7 @@ async function summarize(client: ImapFlow, folder: string, uids: number[]): Prom
   // metadata only, no BODY[] part, so nothing here marks a message \Seen
   for await (const message of client.fetch(
     uids.join(','),
-    { envelope: true, flags: true, size: true },
+    { envelope: true, flags: true, size: true, internalDate: true },
     { uid: true },
   )) {
     byUid.set(message.uid, message)
@@ -77,7 +79,7 @@ function toSummary(folder: string, message: FetchMessageObject): RenderableSumma
   return {
     folder,
     uid: message.uid,
-    date: message.envelope?.date ?? null,
+    date: message.internalDate ?? null,
     sizeBytes: message.size ?? 0,
     from: makeUntrusted(formatAddress(message.envelope?.from?.[0])),
     subject: makeUntrusted(message.envelope?.subject ?? ''),

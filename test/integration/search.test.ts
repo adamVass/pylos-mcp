@@ -146,7 +146,9 @@ describe('searchEmails against a local Dovecot container', () => {
     expect(newest.folder).toBe('INBOX')
     expect(newest.uid).toBeGreaterThan(0)
     expect(newest.sizeBytes).toBeGreaterThan(0)
-    expect(newest.date).toEqual(headerDate(11))
+    // the received date, set when the seeder appended it, never the Date header the sender wrote
+    expect(newest.date).toBeInstanceOf(Date)
+    expect((newest.date as Date).getTime()).toBeGreaterThan(Date.now() - 60 * 60 * 1000)
     expect(newest.seen).toBe(false)
     expect(newest.flagged).toBe(false)
   })
@@ -158,5 +160,10 @@ describe('searchEmails against a local Dovecot container', () => {
     expect(readUntrusted(items[0].subject)).toBe('draft-01')
     expect(items[0].seen).toBe(true)
     expect(items[0].flagged).toBe(true)
+  })
+
+  itIntegration('flaggedOnly returns only flagged mail', async () => {
+    expect((await searchEmails(session, { flaggedOnly: true, limit: 50, offset: 0 })).total).toBe(0)
+    expect((await searchEmails(session, { folder: 'Drafts', flaggedOnly: true, limit: 50, offset: 0 })).total).toBe(1)
   })
 })

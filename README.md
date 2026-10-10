@@ -106,6 +106,8 @@ Enable more with a comma-separated list, for example `CAPABILITIES=drafts,manage
 
 Moving a message into Trash is a delete by another route, so `move_email` refuses Trash unless `delete` is on too.
 
+To answer a message, `create_draft` and `send_email` take `in_reply_to` with its folder and uid, and the reply carries the headers mail clients use to thread it under the original. `search_emails` can narrow results to flagged mail with `flagged_only`.
+
 ## Configuration reference
 
 All configuration is environment variables, validated at startup. Invalid configuration fails immediately with an actionable message, never partway through a conversation. An empty value counts as unset, since bundle managers fill optional fields users leave blank with empty strings.
@@ -121,7 +123,7 @@ All configuration is environment variables, validated at startup. Invalid config
 | `SIEVE_HOST` / `SIEVE_PORT` | `IMAP_HOST` / `4190` | Used only when `sieve-read` is enabled. |
 | `CAPABILITIES` | `drafts` | Comma-separated list of tiers beyond `read`, which is always included. |
 | `MAX_BODY_KB` | `64` | Message body truncation limit. |
-| `MAX_ATTACHMENT_MB` | `25` | Attachment size cap, checked against the size the server declares before any bytes are downloaded. |
+| `MAX_ATTACHMENT_MB` | `25` | Attachment size cap. A download is checked against the size the server declares before any bytes arrive. When composing, it caps all attachments of one message together, shared by every message being composed at once. |
 | `DOWNLOAD_DIR` | `~/Downloads` | Where `get_attachment` writes files. |
 | `SEND_SESSION_CAP` | `5` | Successful `send_email` calls allowed per server process lifetime. |
 | `SEND_SAVE_COPY` | `true` | Append a copy of each sent message to the Sent folder, marked read. Turn off for providers that already file sent mail server-side (Gmail does), which would otherwise show duplicates. |

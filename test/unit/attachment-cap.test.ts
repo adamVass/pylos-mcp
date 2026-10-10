@@ -6,7 +6,10 @@ import { Readable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadConfig } from '../../src/config.js'
 import type { ImapSession } from '../../src/core/client.js'
-import { collectAttachments } from '../../src/core/draft.js'
+import { makeCoreApi } from '../../src/core/api.js'
+import { ComposeBudget, collectAttachments, createDraft } from '../../src/core/draft.js'
+import { SendState, sendEmail } from '../../src/core/smtp.js'
+import { ToolError } from '../../src/errors.js'
 import { getAttachment } from '../../src/core/message.js'
 import { fakeSession } from './helpers.js'
 
@@ -97,7 +100,7 @@ describe('the attachment cap does not trust the declared size', () => {
     const { session } = stubSession({ ...PART, size: 100 }, endlessChunks())
 
     await expect(
-      collectAttachments(session, config(dir), [{ folder: 'INBOX', uid: 7, partId: '1' }]),
+      collectAttachments(session, config(dir), [{ folder: 'INBOX', uid: 7, partId: '1' }], new ComposeBudget()),
     ).rejects.toMatchObject({ code: 'cap_exceeded' })
 
     expect(yielded).toBeLessThan(50)
@@ -162,5 +165,125 @@ describe('saving an attachment', () => {
 
     await expect(getAttachment(session, config(dir), 'INBOX', 7, '1')).rejects.toMatchObject({ code: 'policy' })
     expect(readdirSync(dir)).toEqual([])
+  })
+})
+
+describe('the compose budget', () => {
+  const REF = { folder: 'INBOX', uid: 7, partId: '1' }
+  const TOGETHER =
+    'the attachments together are larger than MAX_ATTACHMENT_MB (1 MB) allows for one message. Nothing was saved or sent'
+  const BUSY = 'another message with attachments is being composed right now. Try again when it has finished'
+
+  const part = (size: number) => stubSession({ ...PART, size }, [Buffer.alloc(size, 0x41)])
+  const cfg = () => config(mkdtempSync(join(tmpdir(), 'pylos-budget-')))
+
+  it('refuses parts that together pass the budget, and gives back what it had reserved', async () => {
+    const budget = new ComposeBudget()
+    const { session } = part(600_000)
+    await expect(collectAttachments(session, cfg(), [REF, REF], budget)).rejects.toThrow(TOGETHER)
+    expect(budget.reserved).toBe(0)
+  })
+
+  it('refuses a composition while another holds the budget, and admits it once that one releases', async () => {
+    const budget = new ComposeBudget()
+    const { session } = part(600_000)
+
+    const first = await collectAttachments(session, cfg(), [REF], budget)
+    await expect(collectAttachments(session, cfg(), [REF], budget)).rejects.toThrow(BUSY)
+    first.release()
+    expect(budget.reserved).toBe(0)
+
+    const third = await collectAttachments(session, cfg(), [REF], budget)
+    expect(budget.reserved).toBe(600_000)
+    third.release()
+  })
+
+  // imapflow transcodes inline text to UTF-8, so an honest part can outgrow its declaration
+  it('charges bytes past the declared size instead of refusing them', async () => {
+    const budget = new ComposeBudget()
+    const { session } = stubSession({ ...PART, size: 1000 }, [Buffer.alloc(1200, 0x41), Buffer.alloc(300, 0x41)])
+    const collected = await collectAttachments(session, cfg(), [REF], budget)
+    expect(collected.attachments[0].content).toHaveLength(1500)
+    expect(budget.reserved).toBe(1500)
+    collected.release()
+    expect(budget.reserved).toBe(0)
+  })
+
+  // one budget for the whole server, held until the APPEND settles, not just until compose
+  it('drafts made through one CoreApi share the budget until the APPEND settles', async () => {
+    let finishAppend: (result: { uid: number }) => void = () => {}
+    const held = new Promise<{ uid: number }>((resolve) => {
+      finishAppend = resolve
+    })
+    let appends = 0
+    const client = {
+      fetchOne: async () => ({ uid: 7, bodyStructure: { ...PART, size: 600_000 } }),
+      download: async () => ({ content: Readable.from([Buffer.alloc(600_000)]), meta: {} }),
+      append: () => {
+        appends += 1
+        return appends === 1 ? held : Promise.resolve({ uid: 9 })
+      },
+    }
+    const session = {
+      withMailbox: <T>(_path: string, fn: (c: never) => Promise<T>) => fn(client as never),
+      specialUse: async () => 'Drafts',
+    } as unknown as ImapSession
+    const core = makeCoreApi(cfg(), session)
+    const draft = { subject: 's', body: 'b', attachments: [REF] }
+
+    const first = core.createDraft(draft)
+    await vi.waitFor(() => expect(appends).toBe(1))
+    await expect(core.createDraft(draft)).rejects.toThrow(BUSY)
+
+    finishAppend({ uid: 8 })
+    await first
+    await expect(core.createDraft(draft)).resolves.toMatchObject({ uid: 9 })
+  })
+
+  it('a draft whose APPEND fails gives its reservation back', async () => {
+    const budget = new ComposeBudget()
+    const client = {
+      fetchOne: async () => ({ uid: 7, bodyStructure: { ...PART, size: 1000 } }),
+      download: async () => ({ content: Readable.from([Buffer.alloc(1000)]), meta: {} }),
+      append: async () => {
+        throw new Error('NO [OVERQUOTA]')
+      },
+    }
+    const session = {
+      withMailbox: <T>(_path: string, fn: (c: never) => Promise<T>) => fn(client as never),
+      specialUse: async () => 'Drafts',
+    } as unknown as ImapSession
+
+    await expect(
+      createDraft(session, cfg(), { subject: 's', body: 'b', attachments: [REF] }, budget),
+    ).rejects.toBeInstanceOf(ToolError)
+    expect(budget.reserved).toBe(0)
+  })
+
+  it('a send the relay never takes gives its reservation back', async () => {
+    const budget = new ComposeBudget()
+    const { session } = part(1000)
+    const sendCfg = loadConfig({
+      EMAIL_USER: 'a@x.example',
+      EMAIL_PASSWORD: 'pw',
+      IMAP_HOST: 'localhost',
+      CAPABILITIES: 'send',
+      SMTP_HOST: '127.0.0.1',
+      // nothing listens on port 1, so the connection is refused at once
+      SMTP_PORT: '1',
+      SEND_ALLOWLIST: '*',
+      MAX_ATTACHMENT_MB: '1',
+    })
+
+    await expect(
+      sendEmail(
+        session,
+        sendCfg,
+        new SendState(),
+        { to: ['b@x.example'], subject: 's', body: 'b', attachments: [REF] },
+        budget,
+      ),
+    ).rejects.toBeInstanceOf(ToolError)
+    expect(budget.reserved).toBe(0)
   })
 })

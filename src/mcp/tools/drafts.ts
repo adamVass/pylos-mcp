@@ -5,7 +5,17 @@ import type { Config } from '../../config.js'
 import type { CoreApi } from '../../core/api.js'
 import { renderDraftSaved } from '../../safety/render.js'
 import { run } from '../run.js'
-import { address, attachment, type AttachmentRef, MAX_ATTACHMENTS, MAX_RECIPIENTS, toPartRefs } from './bounds.js'
+import {
+  address,
+  attachment,
+  type AttachmentRef,
+  MAX_ATTACHMENTS,
+  MAX_RECIPIENTS,
+  REPLY_NOTE,
+  type ReplyRefInput,
+  replyRef,
+  toPartRefs,
+} from './bounds.js'
 
 const base = {
   subject: z.string(),
@@ -15,6 +25,7 @@ const base = {
     .max(MAX_ATTACHMENTS)
     .optional()
     .describe('Attachments are taken from messages already in the mailbox, by folder, uid and part id.'),
+  in_reply_to: replyRef.optional(),
 }
 
 const recipients = {
@@ -37,6 +48,7 @@ interface DraftInput {
   to?: string[]
   cc?: string[]
   attachments?: AttachmentRef[]
+  in_reply_to?: ReplyRefInput
 }
 
 const REVIEWED_BY_A_PERSON =
@@ -51,8 +63,9 @@ export function registerDraftTools(server: McpServer, cfg: Config, core: CoreApi
         to: args.to,
         cc: args.cc,
         attachments: toPartRefs(args.attachments),
+        inReplyTo: args.in_reply_to,
       })
-      return renderDraftSaved(saved.folder, saved.uid, saved.recipients)
+      return renderDraftSaved(saved.folder, saved.uid, saved.recipients, args.in_reply_to)
     })
 
   if (cfg.draftsNoRecipients) {
@@ -64,7 +77,7 @@ export function registerDraftTools(server: McpServer, cfg: Config, core: CoreApi
       {
         description:
           `Save a draft to the Drafts folder. This server is configured to save drafts without recipients: ` +
-          `address it in your mail client. ${REVIEWED_BY_A_PERSON}`,
+          `address it in your mail client. ${REVIEWED_BY_A_PERSON} ${REPLY_NOTE}`,
         inputSchema: z.object(base).strict(),
         annotations: DRAFT_ANNOTATIONS,
       },
@@ -78,7 +91,7 @@ export function registerDraftTools(server: McpServer, cfg: Config, core: CoreApi
     {
       description:
         `Save a draft to the Drafts folder. The result echoes the full recipient list so it can be checked. ` +
-        `${REVIEWED_BY_A_PERSON}`,
+        `${REVIEWED_BY_A_PERSON} ${REPLY_NOTE}`,
       inputSchema: { ...base, ...recipients },
       annotations: DRAFT_ANNOTATIONS,
     },

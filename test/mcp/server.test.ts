@@ -36,7 +36,8 @@ const summary = () => ({
 const email = () => ({
   folder: 'INBOX',
   uid: 7,
-  date: new Date('2026-08-05T10:00:00Z'),
+  sent: new Date('2026-08-05T10:00:00Z'),
+  received: new Date('2026-08-05T10:00:05Z'),
   sizeBytes: 4200,
   from: makeUntrusted('Alice <alice@x.example>'),
   fromName: makeUntrusted('Alice'),
@@ -44,6 +45,7 @@ const email = () => ({
   replyTo: [],
   replyToAddresses: [],
   to: makeUntrusted('tester@example.com'),
+  cc: makeUntrusted(''),
   subject: makeUntrusted('Quarterly report'),
   body: makeUntrusted('Body text here'),
   bodyCutShort: false,
@@ -89,7 +91,13 @@ function fakeCore(calls: Calls): CoreApi {
       calls.sendEmail = [args]
       // `off` throughout this file, since a saved copy would append a clause to
       // every send result asserted here
-      return { accepted: [...args.to, ...(args.cc ?? [])], rejected: [], sent: 2, copy: { status: 'off' } }
+      return {
+        accepted: [...args.to, ...(args.cc ?? [])],
+        rejected: [],
+        sent: 2,
+        copy: { status: 'off' },
+        reply: args.inReplyTo && { ref: args.inReplyTo, answered: true },
+      }
     },
     async listSieveScripts() {
       calls.listSieveScripts = []
@@ -244,11 +252,12 @@ it('list_folders responses carry the fence and the message counts', async () => 
 
 it('search_emails applies the schema defaults and maps its arguments to core', async () => {
   const { client, calls } = await startServer()
-  await call(client, 'search_emails', { folder: 'Archive', unread_only: true, since: '2026-01-02' })
+  await call(client, 'search_emails', { folder: 'Archive', unread_only: true, flagged_only: true, since: '2026-01-02' })
 
   expect(calls.searchEmails?.[0]).toMatchObject({
     folder: 'Archive',
     unreadOnly: true,
+    flaggedOnly: true,
     since: new Date('2026-01-02'),
     limit: 20,
     offset: 0,
@@ -354,6 +363,30 @@ it('DRAFTS_NO_RECIPIENTS removes to/cc from the schema and rejects them if sent 
   expect(calls.createDraft).toBeUndefined()
 })
 
+it('create_draft passes in_reply_to through and names the original in the result', async () => {
+  const { client, calls } = await startServer()
+  const { text } = await call(client, 'create_draft', {
+    subject: 'Re: s',
+    body: 'b',
+    in_reply_to: { folder: 'INBOX', uid: 42 },
+  })
+  expect(calls.createDraft?.[0]).toMatchObject({ inReplyTo: { folder: 'INBOX', uid: 42 } })
+  expect(text).toBe(
+    'Draft saved to Drafts (uid 42) as a reply to INBOX uid 42. Recipients: none. Add them in your mail client before sending.',
+  )
+})
+
+it('the strict drafts schema still accepts in_reply_to', async () => {
+  const { client, calls } = await startServer({ DRAFTS_NO_RECIPIENTS: 'true' })
+  const result = await call(client, 'create_draft', {
+    subject: 'Re: s',
+    body: 'b',
+    in_reply_to: { folder: 'INBOX', uid: 42 },
+  })
+  expect(result.isError).toBe(false)
+  expect(calls.createDraft?.[0]).toMatchObject({ inReplyTo: { folder: 'INBOX', uid: 42 } })
+})
+
 it('create_draft rejects an address that is not an email address', async () => {
   const { client, calls } = await startServer()
   const result = await call(client, 'create_draft', { subject: 's', body: 'b', to: ['not-an-address'] })
@@ -437,6 +470,18 @@ it('send_email reports the recipients and how much of the session budget is left
   expect(isError).toBe(false)
   expect(text).toBe('Sent to a@x.example (2 of 5 session sends used).')
   expect(calls.sendEmail?.[0]).toMatchObject({ to: ['a@x.example'], subject: 's', body: 'b' })
+})
+
+it('send_email passes in_reply_to through and names the original in the result', async () => {
+  const { client, calls } = await startServer(SEND_ENV)
+  const { text } = await call(client, 'send_email', {
+    to: ['a@x.example'],
+    subject: 'Re: s',
+    body: 'b',
+    in_reply_to: { folder: 'INBOX', uid: 42 },
+  })
+  expect(calls.sendEmail?.[0]).toMatchObject({ inReplyTo: { folder: 'INBOX', uid: 42 } })
+  expect(text).toBe('Sent to a@x.example as a reply to INBOX uid 42 (2 of 5 session sends used).')
 })
 
 it('send_email says up front that the message leaves the mailbox', async () => {

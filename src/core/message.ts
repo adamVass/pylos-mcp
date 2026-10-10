@@ -11,15 +11,23 @@ import { sanitizeFilename, uniquePath } from '../safety/filename.js'
 import { readLimitBytes } from '../safety/limits.js'
 import { formatMb, type RenderableEmail } from '../safety/render.js'
 import { makeUntrusted, type UntrustedText } from '../safety/untrusted.js'
+import {
+  chooseBodyPart,
+  downloadName,
+  htmlTwin,
+  isHtmlDocument,
+  isListed,
+  leafParts,
+  partFilename,
+  type MessagePart,
+} from './parts.js'
 
-interface MessagePart {
-  id: string
-  node: MessageStructureObject
+interface BodyText {
+  text: string
+  cutShort: boolean
 }
 
-type BodyText = Pick<RenderableEmail, 'body' | 'bodyCutShort'>
-
-const NO_BODY: BodyText = { body: makeUntrusted(''), bodyCutShort: false }
+const NO_BODY: BodyText = { text: '', cutShort: false }
 
 function untrustedList(values: string[]): UntrustedText[] {
   return values.filter(Boolean).map((value) => makeUntrusted(value))
@@ -37,14 +45,23 @@ export async function getEmail(
   return session.withMailbox(folder, async (client) => {
     const message = await fetchMessage(client, uid)
     const parts = leafParts(message.bodyStructure)
-    const bodyPart = chooseBodyPart(parts)
-    const body = bodyPart ? await downloadText(client, uid, bodyPart, maxBodyKb) : NO_BODY
+    // the listing keys off this structural choice, as unknownPart does, so the two never disagree
+    const structuralBody = chooseBodyPart(parts)
+    let bodyPart = structuralBody
+    let body = bodyPart ? await downloadText(client, uid, bodyPart, maxBodyKb) : NO_BODY
+    // some senders ship an empty plain alternative and put the message in the html one
+    const twin = bodyPart?.node.type === 'text/plain' && body.text.trim() === '' ? htmlTwin(bodyPart, parts) : undefined
+    if (twin) {
+      bodyPart = twin
+      body = await downloadText(client, uid, twin, maxBodyKb)
+    }
     const replyTo = message.envelope?.replyTo ?? []
 
     return {
       folder,
       uid: message.uid,
-      date: message.envelope?.date ?? null,
+      sent: message.envelope?.date ?? null,
+      received: message.internalDate ?? null,
       sizeBytes: message.size ?? 0,
       from: makeUntrusted(formatAddress(message.envelope?.from?.[0])),
       fromName: makeUntrusted(message.envelope?.from?.[0]?.name ?? ''),
@@ -52,10 +69,14 @@ export async function getEmail(
       replyTo: untrustedList(replyTo.map(formatAddress)),
       replyToAddresses: untrustedList(replyTo.map((entry) => entry.address ?? '')),
       to: makeUntrusted((message.envelope?.to ?? []).map(formatAddress).filter(Boolean).join(', ')),
+      cc: makeUntrusted((message.envelope?.cc ?? []).map(formatAddress).filter(Boolean).join(', ')),
       subject: makeUntrusted(message.envelope?.subject ?? ''),
-      ...body,
-      bodyIsHtml: bodyPart?.node.type === 'text/html',
-      attachments: parts.filter((part) => part !== bodyPart && isAttachment(part.node)).map(toAttachment),
+      body: makeUntrusted(body.text),
+      bodyCutShort: body.cutShort,
+      bodyIsHtml:
+        bodyPart?.node.type === 'text/html' ||
+        (bodyPart?.node.type === 'text/plain' && isHtmlDocument(body.text, body.cutShort)),
+      attachments: parts.filter((part) => isListed(part, structuralBody)).map(toAttachment),
     }
   })
 }
@@ -80,7 +101,7 @@ export async function getAttachment(
     // failure is discovered while holding an unread body stream and stalls the
     // shared connection
     await makeDownloadDir(cfg.downloadDir)
-    const name = sanitizeFilename(partFilename(part.node) ?? 'attachment')
+    const name = sanitizeFilename(downloadName(part.node))
 
     const download = await client.download(String(uid), part.id, { uid: true })
     // a message expunged between the FETCH and this DOWNLOAD yields an object with
@@ -168,63 +189,18 @@ function enforceDeclaredSizeCap(part: MessagePart, maxAttachmentMb: number): voi
   if (declaredBytes <= capBytes(maxAttachmentMb)) return
   throw new ToolError(
     'cap_exceeded',
-    `attachment is ${formatMb(declaredBytes)}, cap is ${maxAttachmentMb} MB. Raise MAX_ATTACHMENT_MB if you meant to download it`,
+    `the attachment's encoded size is ${formatMb(declaredBytes)}, cap is ${maxAttachmentMb} MB. Raise MAX_ATTACHMENT_MB if you meant to download it`,
   )
 }
 
 async function fetchMessage(client: ImapFlow, uid: number): Promise<FetchMessageObject> {
   const message = await client.fetchOne(
     String(uid),
-    { envelope: true, bodyStructure: true, flags: true, size: true },
+    { envelope: true, bodyStructure: true, flags: true, size: true, internalDate: true },
     { uid: true },
   )
   if (!message) throw new ToolError('not_found', MESSAGE_GONE)
   return message
-}
-
-/**
- * Two shapes need care. A singlepart message's root node carries no part id at
- * all, but its body is addressable as "1" (imapflow rewrites that to TEXT). And
- * a forwarded message attached as .eml has childNodes despite being one
- * downloadable file, so `disposition: attachment` ends the descent, without
- * which the .eml disappears from the listing entirely.
- */
-function leafParts(root: MessageStructureObject | undefined): MessagePart[] {
-  if (!root) return []
-
-  const parts: MessagePart[] = []
-  const walk = (node: MessageStructureObject): void => {
-    if (node.childNodes && node.childNodes.length > 0 && node.disposition !== 'attachment') {
-      for (const child of node.childNodes) walk(child)
-      return
-    }
-    parts.push({ id: node.part ?? '1', node })
-  }
-
-  walk(root)
-  return parts
-}
-
-/**
- * Only an explicit `disposition: attachment` disqualifies a part from being the
- * body. A filename on its own must NOT: Exchange, Zimbra and several ticketing
- * systems send the real message text as
- * `Content-Disposition: inline; filename="message.txt"`.
- */
-function chooseBodyPart(parts: MessagePart[]): MessagePart | undefined {
-  const displayable = parts.filter((part) => part.node.disposition !== 'attachment')
-  return (
-    displayable.find((part) => part.node.type === 'text/plain') ??
-    displayable.find((part) => part.node.type === 'text/html')
-  )
-}
-
-function isAttachment(node: MessageStructureObject): boolean {
-  return node.disposition === 'attachment' || partFilename(node) !== undefined
-}
-
-export function partFilename(node: MessageStructureObject): string | undefined {
-  return node.dispositionParameters?.filename ?? node.parameters?.name
 }
 
 function toAttachment(part: MessagePart): RenderableEmail['attachments'][number] {
@@ -233,6 +209,7 @@ function toAttachment(part: MessagePart): RenderableEmail['attachments'][number]
     filename: makeUntrusted(partFilename(part.node) ?? ''),
     sizeBytes: part.node.size ?? 0,
     contentType: part.node.type,
+    encoding: part.node.encoding,
   }
 }
 
@@ -253,10 +230,11 @@ async function downloadText(client: ImapFlow, uid: number, part: MessagePart, ma
   const bytes = Buffer.concat(chunks)
   const cutShort = bytes.length > limit
   return {
-    body: makeUntrusted(
-      decodeText(cutShort ? bytes.subarray(0, limit) : bytes, download.meta?.charset ?? part.node.parameters?.charset),
+    text: decodeText(
+      cutShort ? bytes.subarray(0, limit) : bytes,
+      download.meta?.charset ?? part.node.parameters?.charset,
     ),
-    bodyCutShort: cutShort,
+    cutShort,
   }
 }
 
@@ -362,7 +340,8 @@ async function writeExclusive(
  * because it arrives as free-form tool input.
  */
 function unknownPart(parts: MessagePart[]): ToolError {
-  const ids = parts.filter((part) => isAttachment(part.node)).map((part) => part.id)
+  const body = chooseBodyPart(parts)
+  const ids = parts.filter((part) => isListed(part, body)).map((part) => part.id)
   return new ToolError(
     'not_found',
     ids.length > 0

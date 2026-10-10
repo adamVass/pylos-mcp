@@ -10,7 +10,7 @@ const RESERVED_CHARS = /[:*?"<>|]/g
 
 export function sanitizeFilename(name: string): string {
   const base = name.split(/[/\\]/).pop() ?? ''
-  let cleaned = fitLength(base.replace(UNSAFE_CHARS, '').replace(RESERVED_CHARS, '_'))
+  let cleaned = fitLength(base.replace(UNSAFE_CHARS, '').replace(RESERVED_CHARS, '_').replaceAll('![', '!［'))
 
   // Trim and strip leading dots to a fixpoint. A single pass in either order is
   // not enough: dot-strip-then-trim leaves a leading space blocking the `/^\.+/`

@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest'
 import { loadConfig } from '../../src/config.js'
 import type { ImapSession } from '../../src/core/client.js'
+import { ComposeBudget } from '../../src/core/draft.js'
 import { SendState, checkAllowlist, sendEmail } from '../../src/core/smtp.js'
 import { sendPolicyClause } from '../../src/mcp/tools/send.js'
 
@@ -66,21 +67,33 @@ function sendConfig(sendAllowlist: string[] | undefined) {
 
 it('with no allowlist configured, sending is closed and the refusal teaches both fixes', async () => {
   await expect(
-    sendEmail(session, sendConfig(undefined), new SendState(), {
-      to: ['a@x.example'],
-      subject: 's',
-      body: 'b',
-    }),
+    sendEmail(
+      session,
+      sendConfig(undefined),
+      new SendState(),
+      {
+        to: ['a@x.example'],
+        subject: 's',
+        body: 'b',
+      },
+      new ComposeBudget(),
+    ),
   ).rejects.toThrow(/sending is closed.*SEND_ALLOWLIST=\*/s)
 })
 
 it('a blocked recipient is named and the refusal shows how to widen the list', async () => {
   await expect(
-    sendEmail(session, sendConfig(['a@x.example']), new SendState(), {
-      to: ['b@y.example'],
-      subject: 's',
-      body: 'b',
-    }),
+    sendEmail(
+      session,
+      sendConfig(['a@x.example']),
+      new SendState(),
+      {
+        to: ['b@y.example'],
+        subject: 's',
+        body: 'b',
+      },
+      new ComposeBudget(),
+    ),
   ).rejects.toThrow(/b@y\.example.*SEND_ALLOWLIST=\*/s)
 })
 

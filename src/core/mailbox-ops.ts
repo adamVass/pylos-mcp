@@ -1,6 +1,7 @@
 import type { ImapFlow } from 'imapflow'
 import { MESSAGE_GONE, ToolError } from '../errors.js'
 import type { ImapSession } from './client.js'
+import type { ReplyRef } from './reply.js'
 
 const MOVE_FAILED = 'move failed. The destination folder may not exist'
 const TRASH_NEEDS_DELETE =
@@ -131,4 +132,20 @@ export async function deleteEmail(session: ImapSession, folder: string, uid: num
   if (await sameFolder(session, folder, trashFolder)) throw new ToolError('policy', ALREADY_IN_TRASH)
   await moveEmail(session, folder, uid, trashFolder)
   return { trashFolder }
+}
+
+/**
+ * Never throws: the reply already left, so an original that moved meanwhile is
+ * reported rather than raised. requireMessage is what makes a stale uid count as
+ * a failure, since messageFlagsAdd resolves truthy either way.
+ */
+export async function markAnswered(session: ImapSession, ref: ReplyRef): Promise<boolean> {
+  try {
+    return await session.withMailbox(ref.folder, async (client) => {
+      await requireMessage(client, ref.uid)
+      return Boolean(await client.messageFlagsAdd(String(ref.uid), ['\\Answered'], { uid: true }))
+    })
+  } catch {
+    return false
+  }
 }

@@ -42,6 +42,18 @@ export const attachment = z.object({
   part_id: z.string().min(1),
 })
 
+// `.describe` returns fresh instances, so the SDK's identity dedup cannot turn
+// these into a $ref into `attachment` within the same tool schema
+export const replyRef = z.object({
+  folder: folder.describe('Folder of the message being answered.'),
+  uid: uid.describe('Uid of the message being answered.'),
+})
+
+export type ReplyRefInput = z.infer<typeof replyRef>
+
+export const REPLY_NOTE =
+  'To reply, pass in_reply_to with the original\'s folder and uid. A subject starting with "Re:" does not thread on its own.'
+
 export type AttachmentRef = z.infer<typeof attachment>
 
 export function toPartRefs(refs: AttachmentRef[] | undefined): PartRef[] | undefined {

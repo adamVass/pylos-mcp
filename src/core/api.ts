@@ -5,7 +5,7 @@ import type { Config } from '../config.js'
 import { ToolError } from '../errors.js'
 import type { RenderableEmail, RenderableSummary } from '../safety/render.js'
 import type { ImapSession } from './client.js'
-import { createDraft, type DraftArgs, type DraftResult } from './draft.js'
+import { ComposeBudget, createDraft, type DraftArgs, type DraftResult } from './draft.js'
 import { listFolders, type FolderSummary } from './folders.js'
 import { deleteEmail, moveEmail, refuseTrash, setFlags, type DeleteResult } from './mailbox-ops.js'
 import { getAttachment, getEmail, type AttachmentResult } from './message.js'
@@ -29,6 +29,7 @@ export interface CoreApi {
 
 export function makeCoreApi(cfg: Config, session: ImapSession): CoreApi {
   const sendState = new SendState()
+  const composeBudget = new ComposeBudget()
 
   return {
     searchEmails: (args) => searchEmails(session, args),
@@ -38,7 +39,7 @@ export function makeCoreApi(cfg: Config, session: ImapSession): CoreApi {
     // Unreachable in principle, since a tool that was never registered cannot be
     // called. Gating every optional tier here too is a second lock, holding even
     // if a future change registered a tool without also gating it.
-    createDraft: cfg.capabilities.has('drafts') ? (args) => createDraft(session, cfg, args) : notEnabled,
+    createDraft: cfg.capabilities.has('drafts') ? (args) => createDraft(session, cfg, args, composeBudget) : notEnabled,
     moveEmail: cfg.capabilities.has('manage')
       ? async (folder, uid, dest) => {
           if (!cfg.capabilities.has('delete')) await refuseTrash(session, dest)
@@ -49,7 +50,9 @@ export function makeCoreApi(cfg: Config, session: ImapSession): CoreApi {
       ? (folder, uid, flags) => setFlags(session, folder, uid, flags)
       : notEnabled,
     deleteEmail: cfg.capabilities.has('delete') ? (folder, uid) => deleteEmail(session, folder, uid) : notEnabled,
-    sendEmail: cfg.capabilities.has('send') ? (args) => sendEmail(session, cfg, sendState, args) : notEnabled,
+    sendEmail: cfg.capabilities.has('send')
+      ? (args) => sendEmail(session, cfg, sendState, args, composeBudget)
+      : notEnabled,
     listSieveScripts: cfg.capabilities.has('sieve-read') ? () => listSieveScripts(cfg) : notEnabled,
     getSieveScript: cfg.capabilities.has('sieve-read') ? (name) => getSieveScript(cfg, name) : notEnabled,
   }

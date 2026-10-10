@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, it, expect } from 'vitest'
 import { SMTPServer } from 'smtp-server'
 import { loadConfig } from '../../src/config.js'
+import { ComposeBudget } from '../../src/core/draft.js'
 import { SendState, sendEmail } from '../../src/core/smtp.js'
 import { ToolError } from '../../src/errors.js'
 import type { ImapSession } from '../../src/core/client.js'
@@ -71,11 +72,17 @@ it('a relay that will not do STARTTLS fails the send instead of delivering in th
   })
   const state = new SendState()
 
-  const error = await sendEmail(idleSession, cfg, state, {
-    to: [ALLOWED],
-    subject: 'must not go out in the clear',
-    body: 'secret',
-  }).catch((e: unknown) => e)
+  const error = await sendEmail(
+    idleSession,
+    cfg,
+    state,
+    {
+      to: [ALLOWED],
+      subject: 'must not go out in the clear',
+      body: 'secret',
+    },
+    new ComposeBudget(),
+  ).catch((e: unknown) => e)
 
   expect(error).toBeInstanceOf(ToolError)
 

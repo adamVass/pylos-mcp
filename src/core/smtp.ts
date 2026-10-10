@@ -8,7 +8,9 @@ import type { Config } from '../config.js'
 import { APP_PASSWORD_ADVICE, TLS_CA_ADVICE, ToolError, errorCode } from '../errors.js'
 import type { SentCopy } from '../safety/render.js'
 import type { ImapSession } from './client.js'
-import { collectAttachments, composeMessage, type PartRef } from './draft.js'
+import { collectAttachments, composeMessage, type ComposeBudget, type PartRef } from './draft.js'
+import { markAnswered } from './mailbox-ops.js'
+import { readReplyHeaders, type ReplyRef } from './reply.js'
 import { secureOptions } from './tls.js'
 
 /**
@@ -56,6 +58,7 @@ export interface SendArgs {
   subject: string
   body: string
   attachments?: PartRef[]
+  inReplyTo?: ReplyRef
 }
 
 export interface SendResult {
@@ -67,6 +70,8 @@ export interface SendResult {
   rejected: string[]
   sent: number
   copy: SentCopy
+  /** set only for a reply, and `answered` is false when the original could not be marked */
+  reply?: { ref: ReplyRef; answered: boolean }
 }
 
 export async function sendEmail(
@@ -74,6 +79,7 @@ export async function sendEmail(
   cfg: Config,
   state: SendState,
   args: SendArgs,
+  budget: ComposeBudget,
 ): Promise<SendResult> {
   const smtp = smtpTarget(cfg)
   const recipients = [...args.to, ...(args.cc ?? [])]
@@ -105,58 +111,73 @@ export async function sendEmail(
       `session send cap reached (SEND_SESSION_CAP=${cfg.sendSessionCap}). Restart the server to send again`,
     )
   }
+  let release = (): void => {}
   state.inFlight += 1
 
-  const reserved = await (async () => {
-    try {
-      // fetched before the message is composed, because a message that went out
-      // without one of its attachments cannot be recalled
-      const attachments = await collectAttachments(session, cfg, args.attachments ?? [])
+  // held until the copy is filed, because the composed message still holds the encoded bytes
+  try {
+    const reserved = await (async () => {
+      try {
+        // the allowlist and cap settled before any IMAP work, and no relay socket opens before this read
+        const thread = args.inReplyTo ? await readReplyHeaders(session, args.inReplyTo) : undefined
 
-      // Composed once, transmitted and filed as the same bytes: the copy in Sent
-      // is exactly what recipients received, Message-ID included.
-      const message = await composeMessage(cfg, {
-        to: args.to,
-        cc: args.cc,
-        subject: args.subject,
-        body: args.body,
-        attachments,
-      })
+        // fetched before the message is composed, because a message that went out
+        // without one of its attachments cannot be recalled
+        const collected = await collectAttachments(session, cfg, args.attachments ?? [], budget)
+        release = collected.release
 
-      const info = await transport(cfg, smtp)
-        .sendMail({
-          envelope: { from: cfg.user, to: recipients },
-          raw: message,
-          disableFileAccess: true,
-          disableUrlAccess: true,
-        })
-        .catch((err: unknown) => {
-          throw sendFailure(err, `${smtp.host}:${smtp.port}`)
+        // Composed once, transmitted and filed as the same bytes: the copy in Sent
+        // is exactly what recipients received, Message-ID included.
+        const message = await composeMessage(cfg, {
+          ...thread,
+          to: args.to,
+          cc: args.cc,
+          subject: args.subject,
+          body: args.body,
+          attachments: collected.attachments,
         })
 
-      // Only once the server has taken the message: a send the relay refused must
-      // not cost a slot. The total is captured WITH the increment rather than read
-      // back later, or a concurrent send settling in between would make each call
-      // report the other's position in the budget.
-      const sent = (state.sent += 1)
+        const info = await transport(cfg, smtp)
+          .sendMail({
+            envelope: { from: cfg.user, to: recipients },
+            raw: message,
+            disableFileAccess: true,
+            disableUrlAccess: true,
+          })
+          .catch((err: unknown) => {
+            throw sendFailure(err, `${smtp.host}:${smtp.port}`)
+          })
 
-      return { info, message, sent }
-    } finally {
-      // Released whichever way the send went, and before the copy is filed rather
-      // than after: once the increment lands the cap is accounted on `sent`, so
-      // holding the slot through the IMAP append would count the same message
-      // twice and falsely refuse a concurrent send at the boundary.
-      state.inFlight -= 1
+        // Only once the server has taken the message: a send the relay refused must
+        // not cost a slot. The total is captured WITH the increment rather than read
+        // back later, or a concurrent send settling in between would make each call
+        // report the other's position in the budget.
+        const sent = (state.sent += 1)
+
+        return { info, message, sent }
+      } finally {
+        // Released whichever way the send went, and before the copy is filed rather
+        // than after: once the increment lands the cap is accounted on `sent`, so
+        // holding the slot through the IMAP append would count the same message
+        // twice and falsely refuse a concurrent send at the boundary.
+        state.inFlight -= 1
+      }
+    })()
+
+    // after the relay accepted and before the copy is filed, and never a reason to report the send as failed
+    const reply = args.inReplyTo && { ref: args.inReplyTo, answered: await markAnswered(session, args.inReplyTo) }
+
+    return {
+      accepted: reserved.info.accepted.map(addressOf),
+      // `rejected` only, never `rejectedErrors`: those carry the server's own
+      // response text, which is what sendFailure exists to keep out.
+      rejected: reserved.info.rejected.map(addressOf),
+      sent: reserved.sent,
+      copy: await saveCopy(session, cfg, reserved.message),
+      reply,
     }
-  })()
-
-  return {
-    accepted: reserved.info.accepted.map(addressOf),
-    // `rejected` only, never `rejectedErrors`: those carry the server's own
-    // response text, which is what sendFailure exists to keep out.
-    rejected: reserved.info.rejected.map(addressOf),
-    sent: reserved.sent,
-    copy: await saveCopy(session, cfg, reserved.message),
+  } finally {
+    release()
   }
 }
 

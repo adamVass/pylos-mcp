@@ -1,11 +1,13 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, vi } from 'vitest'
 import { ImapFlow } from 'imapflow'
 import { ImapSession } from '../../src/core/client.js'
 import { getAttachment, getEmail } from '../../src/core/message.js'
+import { renderEmail } from '../../src/safety/render.js'
 import { readUntrusted } from '../../src/safety/untrusted.js'
 import { build, itIntegration, seedClient, testConfig } from './helpers.js'
 
@@ -54,6 +56,10 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
   let uidBig = 0
   let uidLongBody = 0
   let uidInlineNamedBody = 0
+  let uidEmptyPlain = 0
+  let uidHtmlAsPlain = 0
+  let uidForwarded = 0
+  let uidSplit = 0
 
   beforeAll(async () => {
     if (!process.env.RUN_INTEGRATION) return
@@ -117,11 +123,51 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
       ],
     })
 
+    const emptyPlain = await build({
+      ...common,
+      subject: 'empty plain fixture',
+      text: '  \n',
+      html: '<p>the real text</p>',
+    })
+    const htmlAsPlain = await build({
+      ...common,
+      subject: 'html as plain fixture',
+      text: readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'html-as-plain.txt'), 'utf8'),
+    })
+    const forwarded = await build({
+      ...common,
+      subject: 'forward fixture',
+      html: '<p>see the forwarded message</p>',
+      attachments: [
+        {
+          content: Buffer.from('From: a@x.example\r\nSubject: inner\r\n\r\nthe inner text\r\n'),
+          contentType: 'message/rfc822',
+          contentDisposition: 'inline',
+          filename: false,
+        },
+      ],
+    })
+    // Apple Mail's shape: text, an inline image, then more text. `filename: false`
+    // stops nodemailer naming the text parts, which old code already listed by name
+    const split = await build({
+      ...common,
+      subject: 'split body fixture',
+      attachments: [
+        { content: 'first half', contentType: 'text/plain', contentDisposition: 'inline', filename: false },
+        { filename: 'x.png', content: Buffer.alloc(10, 1), contentType: 'image/png', contentDisposition: 'inline' },
+        { content: 'second half', contentType: 'text/plain', contentDisposition: 'inline', filename: false },
+      ],
+    })
+
     uidMultipart = await appendFixture(seeder, multipart)
     uidHtmlOnly = await appendFixture(seeder, htmlOnly)
     uidBig = await appendFixture(seeder, big)
     uidLongBody = await appendFixture(seeder, longBody)
     uidInlineNamedBody = await appendFixture(seeder, inlineNamedBody)
+    uidEmptyPlain = await appendFixture(seeder, emptyPlain)
+    uidHtmlAsPlain = await appendFixture(seeder, htmlAsPlain)
+    uidForwarded = await appendFixture(seeder, forwarded)
+    uidSplit = await appendFixture(seeder, split)
 
     session = new ImapSession(testConfig())
   }, 120_000)
@@ -163,7 +209,9 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
     expect(email.folder).toBe(FOLDER)
     expect(email.uid).toBe(uidMultipart)
     expect(email.sizeBytes).toBeGreaterThan(5000)
-    expect(email.date).toBeInstanceOf(Date)
+    expect(email.sent).toBeInstanceOf(Date)
+    expect(email.received).toBeInstanceOf(Date)
+    expect(readUntrusted(email.cc)).toBe('')
     expect(readUntrusted(email.subject)).toBe('multipart fixture')
     expect(readUntrusted(email.from)).toBe(SENDER)
     for (const recipient of RECIPIENTS) expect(readUntrusted(email.to)).toContain(recipient)
@@ -313,5 +361,32 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
 
     const result = await getAttachment(session, cfg, FOLDER, uidMultipart, pdfPartId)
     expect(readFileSync(result.path)).toEqual(KNOWN_PDF_BYTES)
+  })
+
+  itIntegration('an empty plain alternative gives way to its html twin', async () => {
+    const email = await getEmail(session, FOLDER, uidEmptyPlain, 64)
+    expect(email.bodyIsHtml).toBe(true)
+    expect(readUntrusted(email.body)).toContain('the real text')
+    expect(email.attachments).toEqual([])
+  })
+
+  itIntegration('an HTML document sent as text/plain is inspected like HTML', async () => {
+    const email = await getEmail(session, FOLDER, uidHtmlAsPlain, 64)
+    expect(email.bodyIsHtml).toBe(true)
+    const out = renderEmail(email, 64, testConfig().detect)
+    expect(out).toMatch(/^Warnings: hidden_text \(/m)
+    expect(out).not.toContain('<table')
+  })
+
+  itIntegration('a forwarded message is listed whole and its text is not the body', async () => {
+    const email = await getEmail(session, FOLDER, uidForwarded, 64)
+    expect(readUntrusted(email.body)).toContain('see the forwarded message')
+    expect(email.attachments.map((a) => a.contentType)).toEqual(['message/rfc822'])
+  })
+
+  itIntegration('the second half of a split body is listed, not lost', async () => {
+    const email = await getEmail(session, FOLDER, uidSplit, 64)
+    expect(readUntrusted(email.body).trim()).toBe('first half')
+    expect(email.attachments.map((a) => a.contentType)).toEqual(['image/png', 'text/plain'])
   })
 })

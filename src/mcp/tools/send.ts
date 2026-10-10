@@ -4,7 +4,7 @@ import type { Config } from '../../config.js'
 import type { CoreApi } from '../../core/api.js'
 import { renderSent } from '../../safety/render.js'
 import { run } from '../run.js'
-import { address, attachment, MAX_ATTACHMENTS, MAX_RECIPIENTS, toPartRefs } from './bounds.js'
+import { address, attachment, MAX_ATTACHMENTS, MAX_RECIPIENTS, REPLY_NOTE, replyRef, toPartRefs } from './bounds.js'
 
 export function sendPolicyClause(allowlist: string[] | undefined): string {
   if (allowlist === undefined) {
@@ -24,7 +24,7 @@ export function registerSendTools(server: McpServer, cfg: Config, core: CoreApi)
         'Send an email. This transmits the message to external recipients immediately through the ' +
         'configured SMTP server; it cannot be recalled, and no one reviews it first. Prefer create_draft ' +
         `unless the account owner has asked for the message to go out now. At most ${cfg.sendSessionCap} ` +
-        `messages can be sent per server session. ${sendPolicyClause(cfg.sendAllowlist)}`,
+        `messages can be sent per server session. ${sendPolicyClause(cfg.sendAllowlist)} ${REPLY_NOTE}`,
       inputSchema: {
         to: z.array(address()).min(1).max(MAX_RECIPIENTS).describe('Recipients. At least one is required.'),
         cc: z.array(address()).max(MAX_RECIPIENTS).optional(),
@@ -35,6 +35,7 @@ export function registerSendTools(server: McpServer, cfg: Config, core: CoreApi)
           .max(MAX_ATTACHMENTS)
           .optional()
           .describe('Attachments are taken from messages already in the mailbox, by folder, uid and part id.'),
+        in_reply_to: replyRef.optional(),
       },
       // the only tool whose effect cannot be undone from a mail client, so it
       // carries both hints a client would use to insist on a human first
@@ -53,8 +54,9 @@ export function registerSendTools(server: McpServer, cfg: Config, core: CoreApi)
           subject: args.subject,
           body: args.body,
           attachments: toPartRefs(args.attachments),
+          inReplyTo: args.in_reply_to,
         })
-        return renderSent(sent.accepted, sent.rejected, sent.sent, cfg.sendSessionCap, sent.copy)
+        return renderSent(sent.accepted, sent.rejected, sent.sent, cfg.sendSessionCap, sent.copy, sent.reply)
       }),
   )
 }

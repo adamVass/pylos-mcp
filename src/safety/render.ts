@@ -40,7 +40,10 @@ export function fenceMarkers(nonce: string): { open: string; close: string; remi
 export interface RenderableEmail {
   folder: string
   uid: number
-  date: Date | string | null
+  /** the Date header, which the sender wrote */
+  sent: Date | string | null
+  /** INTERNALDATE, set by the receiving server */
+  received: Date | string | null
   sizeBytes: number
   from: UntrustedText
   fromName: UntrustedText
@@ -49,16 +52,18 @@ export interface RenderableEmail {
   /** bare, because a display name can carry an address of its own */
   replyToAddresses: UntrustedText[]
   to: UntrustedText
+  cc: UntrustedText
   subject: UntrustedText
   body: UntrustedText
   bodyCutShort: boolean
   bodyIsHtml: boolean
-  attachments: { partId: string; filename: UntrustedText; sizeBytes: number; contentType: string }[]
+  attachments: { partId: string; filename: UntrustedText; sizeBytes: number; contentType: string; encoding?: string }[]
 }
 
 export interface RenderableSummary {
   folder: string
   uid: number
+  /** INTERNALDATE, the date SINCE and BEFORE filter on */
   date: Date | string | null
   sizeBytes: number
   from: UntrustedText
@@ -81,9 +86,11 @@ function neutralizeFence(s: string): string {
   return s.replace(FENCE_START, '‹‹‹')
 }
 
-// a rendering client fetches a Markdown image's URL, a beacon the sender controls
+// a rendering client fetches the source of a Markdown image, an <img tag or an <image tag (which parsers rewrite to <img), a beacon the sender controls
 function sanitize(s: string): string {
-  return neutralizeFence(stripInvisible(s)).replaceAll('![', '!［')
+  return neutralizeFence(stripInvisible(s))
+    .replaceAll('![', '!［')
+    .replace(/<(img|image)/gi, '‹$1')
 }
 
 function present(t: UntrustedText): string {
@@ -129,6 +136,13 @@ export function boundErrorMessage(message: string): string {
 
 export function formatMb(bytes: number): string {
   return `${(bytes / 1_000_000).toFixed(1)} MB`
+}
+
+// BODYSTRUCTURE declares the encoded size, and base64 is a third larger than the file
+function listedSize(a: { sizeBytes: number; encoding?: string }): string {
+  return a.encoding?.toLowerCase() === 'base64'
+    ? `about ${formatSize(Math.floor((a.sizeBytes * 3) / 4))}`
+    : formatSize(a.sizeBytes)
 }
 
 function formatSize(bytes: number): string {
@@ -180,7 +194,8 @@ export function renderEmail(e: RenderableEmail, maxBodyKb: number, detect: Detec
   if (e.bodyIsHtml && detect.hiddenText) {
     const inspection = inspectHtml(rawBody, detect)
     if (inspection.flag !== undefined) flags.push(inspection.flag)
-    if (inspection.strippedHtml !== undefined) source = inspection.strippedHtml
+    // the converter reads the DOM the detector walked, so no depth rule of its own can show unchecked text
+    source = inspection.html
   }
 
   // HTML is decoded first: entity-encoded markers (`&lt;&lt;&lt;END ...`) would
@@ -190,7 +205,7 @@ export function renderEmail(e: RenderableEmail, maxBodyKb: number, detect: Detec
   const fromLine = presentLine(e.from)
   const subjectLine = presentLine(e.subject)
   const listed = e.attachments.slice(0, MAX_LISTED_ATTACHMENTS)
-  const listedNames = listed.map((a) => presentLine(a.filename))
+  const listedNames = listed.map((a) => presentLine(a.filename) || '(no name)')
 
   const regions: TextRegion[] = [
     { name: 'From', text: fromLine },
@@ -203,10 +218,12 @@ export function renderEmail(e: RenderableEmail, maxBodyKb: number, detect: Detec
   // printed so a reply destination is visible, and skipped when it only repeats From
   const joinedReplyTo = replyTo.join(', ')
   const repeatsFrom = joinedReplyTo === fromAddress || joinedReplyTo === readUntrusted(e.from)
+  const ccLine = presentLine(e.cc)
   const fenced = [
     `From: ${fromLine}`,
     ...(replyTo.length > 0 && !repeatsFrom ? [`Reply-To: ${line(joinedReplyTo)}`] : []),
     `To: ${presentLine(e.to)}`,
+    ...(ccLine !== '' ? [`Cc: ${ccLine}`] : []),
     `Subject: ${subjectLine}`,
     '',
     body,
@@ -215,7 +232,7 @@ export function renderEmail(e: RenderableEmail, maxBodyKb: number, detect: Detec
   if (e.attachments.length > 0) {
     fenced.push('', 'Attachments:')
     listed.forEach((a, i) => {
-      fenced.push(`[part ${line(a.partId)}] ${listedNames[i]}, ${formatSize(a.sizeBytes)}, ${line(a.contentType)}`)
+      fenced.push(`[part ${line(a.partId)}] ${listedNames[i]}, ${listedSize(a)}, ${line(a.contentType)}`)
     })
     const unlisted = e.attachments.length - MAX_LISTED_ATTACHMENTS
     if (unlisted > 0) fenced.push(`...and ${unlisted} more not listed`)
@@ -224,7 +241,8 @@ export function renderEmail(e: RenderableEmail, maxBodyKb: number, detect: Detec
   const out = [
     `Folder: ${line(e.folder)}`,
     `UID: ${e.uid}`,
-    `Date: ${formatDate(e.date)}`,
+    `Sent: ${formatDate(e.sent)}`,
+    `Received: ${formatDate(e.received)}`,
     `Size: ${formatSize(e.sizeBytes)}`,
   ]
 
@@ -258,7 +276,7 @@ export function renderSearchResults(total: number, offset: number, items: Render
   })
 
   return [
-    `Found ${total} message(s), showing ${items.length} from offset ${offset} (newest first):`,
+    `Found ${total} message(s), showing ${items.length} from offset ${offset} (most recently added first):`,
     ...fence(lines),
   ].join('\n')
 }
@@ -284,11 +302,20 @@ export function renderAttachmentSaved(path: string, sizeBytes: number, contentTy
   return [`Saved an attachment (${formatSize(sizeBytes)}, ${type}) to:`, ...fence([line(path)])].join('\n')
 }
 
-export function renderDraftSaved(folder: string, uid: number | null, recipients: string[]): string {
-  const saved =
-    uid === null
-      ? `Draft saved to ${line(folder)} (the server reported no uid).`
-      : `Draft saved to ${line(folder)} (uid ${uid}).`
+type MessageRef = { folder: string; uid: number }
+
+function replyClause(ref: MessageRef | undefined): string {
+  return ref === undefined ? '' : ` as a reply to ${line(ref.folder)} uid ${ref.uid}`
+}
+
+export function renderDraftSaved(
+  folder: string,
+  uid: number | null,
+  recipients: string[],
+  replyTo?: MessageRef,
+): string {
+  const where = uid === null ? `${line(folder)} (the server reported no uid)` : `${line(folder)} (uid ${uid})`
+  const saved = `Draft saved to ${where}${replyClause(replyTo)}.`
 
   return recipients.length > 0
     ? `${saved} Recipients: ${recipients.map(line).join(', ')}. Review them in your mail client before sending.`
@@ -302,12 +329,20 @@ export type SentCopy = { status: 'saved'; folder: string } | { status: 'failed' 
  * SOME recipients still accepts the message, and naming only the accepted ones
  * would let a mistyped address look like a delivery.
  */
-export function renderSent(accepted: string[], rejected: string[], sent: number, cap: number, copy: SentCopy): string {
+export function renderSent(
+  accepted: string[],
+  rejected: string[],
+  sent: number,
+  cap: number,
+  copy: SentCopy,
+  reply?: { ref: MessageRef; answered: boolean },
+): string {
   const used = `(${sent} of ${cap} session sends used).`
+  const answering = replyClause(reply?.ref)
   const head =
     accepted.length > 0
-      ? `Sent to ${accepted.map(line).join(', ')} ${used}`
-      : `Sent, though the server named no recipients ${used}`
+      ? `Sent to ${accepted.map(line).join(', ')}${answering} ${used}`
+      : `Sent, though the server named no recipients${answering} ${used}`
 
   const refused =
     rejected.length === 0
@@ -321,7 +356,8 @@ export function renderSent(accepted: string[], rejected: string[], sent: number,
         ? ' The message went out, but a copy could not be saved to the Sent folder.'
         : ''
 
-  return `${head}${refused}${filed}`
+  const unmarked = reply?.answered === false ? ' The original could not be marked as answered.' : ''
+  return `${head}${refused}${filed}${unmarked}`
 }
 
 export function renderMoved(uid: number, from: string, to: string): string {

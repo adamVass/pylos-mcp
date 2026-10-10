@@ -38,17 +38,17 @@ describe('hidden_text', () => {
   // the fixture's hidden sentence is 118 characters, past the floor on its own,
   // so the suffix pins an escalation reported alongside an ordinary count
   it('flags the hidden-div fixture and counts its characters', () => {
-    const { flag, strippedHtml } = inspectHtml(fixture('hidden-div.html'), ALL_ON)
+    const { flag, html } = inspectHtml(fixture('hidden-div.html'), ALL_ON)
     expect(flag?.detector).toBe('hidden_text')
     expect(flag?.note).toMatch(/\d+ hidden characters via display:none, containing an instruction-like phrase/)
-    expect(strippedHtml).toBeUndefined()
+    expect(html).toContain('attacker@evil.example')
   })
 
   it('strip mode removes the hidden subtree and says how much it dropped', () => {
-    const { flag, strippedHtml } = inspectHtml(fixture('hidden-div.html'), STRIP)
+    const { flag, html } = inspectHtml(fixture('hidden-div.html'), STRIP)
     expect(flag?.note).toMatch(/\d+ hidden characters dropped/)
-    expect(strippedHtml).not.toContain('attacker@evil.example')
-    expect(strippedHtml).toContain('quarterly report')
+    expect(html).not.toContain('attacker@evil.example')
+    expect(html).toContain('quarterly report')
   })
 
   it.each([
@@ -109,10 +109,10 @@ describe('hidden_text floor', () => {
   })
 
   it('strip mode drops the same preheader and reports it', () => {
-    const { flag, strippedHtml } = inspectHtml(PREHEADER, STRIP)
+    const { flag, html } = inspectHtml(PREHEADER, STRIP)
     expect(flag?.note).toMatch(/^\d+ hidden characters dropped \(display:none\)$/)
-    expect(strippedHtml).not.toContain('Your July invoice')
-    expect(strippedHtml).toContain('the invoice is attached')
+    expect(html).not.toContain('Your July invoice')
+    expect(html).toContain('the invoice is attached')
   })
 
   it('hidden instruction text flags under the floor and names the escalation', () => {
@@ -327,12 +327,31 @@ describe('mixed script', () => {
     )
   })
 
+  it.each([
+    '\u04cf',
+    '\u04c0',
+    '\u050d',
+    '\u0517',
+    '\u04bd',
+    '\u0475',
+    '\u0461',
+    '\u0500',
+    '\u04ba',
+    '\u051a',
+    '\u051c',
+  ])('flags lookalike %s inside a Latin word', (letter) => {
+    expect(mixed(`Ex${letter}mple`)?.note).toBe(
+      '1 word mixing Latin with lookalike Cyrillic or Greek letters in subject',
+    )
+  })
+
   it('stays quiet on units, Russian text, brand-plus-suffix words and non-Latin filenames', () => {
-    // μm, Δt, kΩ, a Russian sentence, WiFiроутер, отчет.pdf
+    // μm, Δt, kΩ, a Russian sentence, WiFiроутер, Wiҗi, отчет.pdf
     for (const text of [
       'size 5 \u03bcm after \u0394t in k\u03a9',
       '\u041f\u0440\u0438\u0432\u0435\u0442, \u043a\u0430\u043a \u0434\u0435\u043b\u0430?',
       'WiFi\u0440\u043e\u0443\u0442\u0435\u0440',
+      'Wi\u0497i',
       '\u043e\u0442\u0447\u0435\u0442.pdf',
     ]) {
       expect(mixed(text), text).toBeUndefined()

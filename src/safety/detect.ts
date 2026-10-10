@@ -23,7 +23,8 @@ export interface DetectOptions {
 
 interface HtmlInspection {
   flag?: ContentFlag
-  strippedHtml?: string
+  /** the capped document this walked, which is what the caller must convert */
+  html: string
 }
 
 type Mechanism = 'display:none' | 'visibility:hidden' | 'tiny font' | 'matching colors' | 'off-screen' | 'aria-hidden'
@@ -89,6 +90,8 @@ function offScreen(value: string | undefined): boolean {
 // preview text, which runs 35 to 90 characters.
 const HIDDEN_TEXT_FLOOR = 100
 
+const RAW_TEXT_ELEMENTS = new Set(['xmp', 'noscript', 'iframe', 'noembed', 'noframes', 'plaintext'])
+
 // Iterative, so pruning a hostile document cannot itself overflow the stack.
 function capDepth(root: ParentNode): void {
   const pending: [ParentNode, number][] = [[root, 0]]
@@ -110,6 +113,8 @@ function capDepth(root: ParentNode): void {
 export function inspectHtml(html: string, opts: DetectOptions): HtmlInspection {
   const doc = parseDocument(html)
   capDepth(doc)
+  // dom-serializer writes their text raw, so the round trip would decode it again
+  for (const el of DomUtils.findAll((e) => RAW_TEXT_ELEMENTS.has(e.name), doc.children)) el.name = 'span'
   const mechanisms = new Set<Mechanism>()
   const hidden: Element[] = []
   const texts: string[] = []
@@ -136,8 +141,9 @@ export function inspectHtml(html: string, opts: DetectOptions): HtmlInspection {
     }
   }
   walk(doc.children)
+  const serialized = () => DomUtils.getOuterHTML(doc)
 
-  if (hiddenChars === 0) return {}
+  if (hiddenChars === 0) return { html: serialized() }
   const how = [...mechanisms].join(', ')
 
   // Joined with a space and left un-collapsed, both deliberately. A run may span
@@ -157,15 +163,18 @@ export function inspectHtml(html: string, opts: DetectOptions): HtmlInspection {
   if (!opts.stripHiddenText) {
     // hidden instructions are never routine at any length, which is why an
     // escalation reads past the floor
-    if (escalations.length === 0 && hiddenChars < HIDDEN_TEXT_FLOOR) return {}
-    return { flag: { detector: 'hidden_text', note: `${hiddenChars} hidden characters via ${how}${why}` } }
+    if (escalations.length === 0 && hiddenChars < HIDDEN_TEXT_FLOOR) return { html: serialized() }
+    return {
+      flag: { detector: 'hidden_text', note: `${hiddenChars} hidden characters via ${how}${why}` },
+      html: serialized(),
+    }
   }
   // the floor governs the warning only: an owner who asked for hidden text to be
   // dropped gets all of it dropped
   for (const el of hidden) DomUtils.removeElement(el)
   return {
     flag: { detector: 'hidden_text', note: `${hiddenChars} hidden characters dropped (${how})${why}` },
-    strippedHtml: DomUtils.getOuterHTML(doc),
+    html: serialized(),
   }
 }
 
@@ -278,12 +287,12 @@ export function detectSender(fields: SenderFields, opts: DetectOptions): Content
   return notes.length > 0 ? { detector: 'sender_mismatch', note: notes.join(', ') } : undefined
 }
 
-// Chrome's per-word IDN spoof rule (UTS #39 Latin lookalikes), so μm and WiFiроутер stay quiet.
+// UTS #39 Latin lookalikes, close to Chrome's Cyrillic list minus ordinary Russian letters, so μm and WiFiроутер stay quiet
 const LOOKALIKES = new Set([
-  // Cyrillic lowercase: а е о р с у х ѕ і ј һ ԁ ԛ ԝ
-  ...'\u0430\u0435\u043e\u0440\u0441\u0443\u0445\u0455\u0456\u0458\u04bb\u0501\u051b\u051d',
-  // Cyrillic uppercase: А В Е К М Н О Р С Т Х І Ј Ѕ
-  ...'\u0410\u0412\u0415\u041a\u041c\u041d\u041e\u0420\u0421\u0422\u0425\u0406\u0408\u0405',
+  // Cyrillic lowercase: а е о р с у х ѕ і ј һ ԁ ԛ ԝ ӏ ԍ ԗ ҽ ѵ ѡ
+  ...'\u0430\u0435\u043e\u0440\u0441\u0443\u0445\u0455\u0456\u0458\u04bb\u0501\u051b\u051d\u04cf\u050d\u0517\u04bd\u0475\u0461',
+  // Cyrillic uppercase: А В Е К М Н О Р С Т Х І Ј Ѕ Ӏ Ԁ Һ Ԛ Ԝ
+  ...'\u0410\u0412\u0415\u041a\u041c\u041d\u041e\u0420\u0421\u0422\u0425\u0406\u0408\u0405\u04c0\u0500\u04ba\u051a\u051c',
   // Greek lowercase: ο ν ρ ϲ
   ...'\u03bf\u03bd\u03c1\u03f2',
   // Greek uppercase: Α Β Ε Ζ Η Ι Κ Μ Ν Ο Ρ Τ Υ Χ

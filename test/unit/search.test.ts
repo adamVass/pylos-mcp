@@ -20,6 +20,7 @@ function stubSession(uids: number[]): ImapSession {
         yield {
           uid,
           envelope: { date: new Date('2026-01-02T03:04:05Z'), subject: `subject ${uid}`, from: [] },
+          internalDate: new Date('2026-01-02T03:04:06Z'),
           flags: new Set<string>(),
           size: 10,
         }
@@ -46,4 +47,18 @@ it('paginates the newest messages first, not the first page of the oldest', asyn
 
   const past = await searchEmails(session, { limit: 2, offset: 9 })
   expect(past.items).toEqual([])
+})
+
+// imapflow compiles a present-but-undefined key into a criterion, so false must leave no key at all
+it('flaggedOnly asks the server for flagged mail, and false asks for nothing extra', async () => {
+  const asked: unknown[] = []
+  const session = fakeSession({
+    search: async (criteria: unknown) => {
+      asked.push(criteria)
+      return []
+    },
+  })
+  await searchEmails(session, { flaggedOnly: true, limit: 5, offset: 0 })
+  await searchEmails(session, { flaggedOnly: false, limit: 5, offset: 0 })
+  expect(asked).toStrictEqual([{ flagged: true }, {}])
 })

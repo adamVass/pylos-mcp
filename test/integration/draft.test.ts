@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, vi } from 'vitest'
 import { ImapFlow } from 'imapflow'
 import { simpleParser, type AddressObject } from 'mailparser'
 import { ImapSession } from '../../src/core/client.js'
-import { createDraft } from '../../src/core/draft.js'
+import { ComposeBudget, createDraft } from '../../src/core/draft.js'
 import { getEmail } from '../../src/core/message.js'
 import { readUntrusted } from '../../src/safety/untrusted.js'
 import { build, itIntegration, seedClient, testConfig } from './helpers.js'
@@ -38,6 +38,8 @@ describe('createDraft against a local Dovecot container', () => {
 
   let uidMultipart = 0
   let uidBig = 0
+  let uidOriginal = 0
+  let uidLatin1 = 0
 
   /**
    * Cleanup is a set difference against this rather than a list of the UIDs
@@ -109,10 +111,45 @@ describe('createDraft against a local Dovecot container', () => {
       text: 'has a big attachment',
       attachments: [{ filename: 'huge.bin', content: BIG_BYTES, contentType: 'application/octet-stream' }],
     })
+    const original = await build({
+      ...common,
+      subject: 'the original',
+      text: 'please reply',
+      messageId: '<original@x.example>',
+      inReplyTo: '<parent@x.example>',
+      references: ['<root@x.example>', '<mid@x.example>', '<parent@x.example>'],
+    })
+
+    const latin1 = Buffer.concat([
+      Buffer.from(
+        [
+          `From: ${SENDER}`,
+          'To: tester@x.example',
+          'Subject: windows-1252 notes',
+          'MIME-Version: 1.0',
+          'Content-Type: multipart/mixed; boundary="b"',
+          '',
+          '--b',
+          'Content-Type: text/plain; charset=utf-8',
+          '',
+          'see the notes',
+          '--b',
+          'Content-Type: text/plain; charset=windows-1252; name="notes.txt"',
+          'Content-Disposition: inline; filename="notes.txt"',
+          'Content-Transfer-Encoding: 8bit',
+          '',
+          '',
+        ].join('\r\n'),
+      ),
+      Buffer.alloc(1000, 0xe9),
+      Buffer.from('\r\n--b--\r\n'),
+    ])
 
     for (const [message, assign] of [
       [multipart, (uid: number) => (uidMultipart = uid)],
       [big, (uid: number) => (uidBig = uid)],
+      [original, (uid: number) => (uidOriginal = uid)],
+      [latin1, (uid: number) => (uidLatin1 = uid)],
     ] as const) {
       const result = await seeder.append(FOLDER, message, [])
       if (!result || result.uid === undefined) throw new Error(`APPEND to ${FOLDER} returned no UID`)
@@ -165,12 +202,29 @@ describe('createDraft against a local Dovecot container', () => {
     })
   }
 
+  async function sourceFlags(uid: number): Promise<Set<string>> {
+    const lock = await seeder!.getMailboxLock(FOLDER)
+    try {
+      await seeder!.noop()
+      const message = await seeder!.fetchOne(String(uid), { flags: true }, { uid: true })
+      if (!message) throw new Error(`no message with uid ${uid} in ${FOLDER}`)
+      return message.flags ?? new Set<string>()
+    } finally {
+      lock.release()
+    }
+  }
+
   itIntegration('appends a draft with \\Draft flag to the Drafts special-use folder', async () => {
-    const result = await createDraft(session, testConfig(), {
-      subject: 'Plan',
-      body: 'Draft body',
-      to: ['x@y.example'],
-    })
+    const result = await createDraft(
+      session,
+      testConfig(),
+      {
+        subject: 'Plan',
+        body: 'Draft body',
+        to: ['x@y.example'],
+      },
+      new ComposeBudget(),
+    )
 
     expect(result.folder).toBe(DRAFTS)
     // Dovecot advertises UIDPLUS, so the honest answer here is a real UID, and
@@ -187,12 +241,17 @@ describe('createDraft against a local Dovecot container', () => {
   })
 
   itIntegration('echoes to and cc as one recipient list, in order', async () => {
-    const result = await createDraft(session, testConfig(), {
-      subject: 'Plan',
-      body: 'b',
-      to: ['a@y.example', 'b@y.example'],
-      cc: ['c@y.example'],
-    })
+    const result = await createDraft(
+      session,
+      testConfig(),
+      {
+        subject: 'Plan',
+        body: 'b',
+        to: ['a@y.example', 'b@y.example'],
+        cc: ['c@y.example'],
+      },
+      new ComposeBudget(),
+    )
 
     expect(result.recipients).toEqual(['a@y.example', 'b@y.example', 'c@y.example'])
 
@@ -204,11 +263,16 @@ describe('createDraft against a local Dovecot container', () => {
   itIntegration('attachment-by-reference round-trips byte-identical', async () => {
     const pdfPartId = await partIdFor(uidMultipart, 'report.pdf')
 
-    const result = await createDraft(session, testConfig(), {
-      subject: 'Fwd',
-      body: 'see attached',
-      attachments: [{ folder: FOLDER, uid: uidMultipart, partId: pdfPartId }],
-    })
+    const result = await createDraft(
+      session,
+      testConfig(),
+      {
+        subject: 'Fwd',
+        body: 'see attached',
+        attachments: [{ folder: FOLDER, uid: uidMultipart, partId: pdfPartId }],
+      },
+      new ComposeBudget(),
+    )
 
     // Asserted again here, not only in the no-attachment test: fetching a part
     // leaves its source folder selected, and imapflow validates APPEND flags
@@ -235,11 +299,16 @@ describe('createDraft against a local Dovecot container', () => {
     const spy = vi.spyOn(ImapFlow.prototype, 'download')
     try {
       await expect(
-        createDraft(session, cfg, {
-          subject: 'big',
-          body: 'x',
-          attachments: [{ folder: FOLDER, uid: uidBig, partId: bigPartId }],
-        }),
+        createDraft(
+          session,
+          cfg,
+          {
+            subject: 'big',
+            body: 'x',
+            attachments: [{ folder: FOLDER, uid: uidBig, partId: bigPartId }],
+          },
+          new ComposeBudget(),
+        ),
       ).rejects.toMatchObject({ code: 'cap_exceeded' })
       expect(spy).not.toHaveBeenCalled()
     } finally {
@@ -258,14 +327,19 @@ describe('createDraft against a local Dovecot container', () => {
     // the good attachment is fetched first and the bad one fails afterwards, so
     // this pins that failure is decided before the APPEND rather than after
     await expect(
-      createDraft(session, cfg, {
-        subject: 'mixed',
-        body: 'x',
-        attachments: [
-          { folder: FOLDER, uid: uidMultipart, partId: pdfPartId },
-          { folder: FOLDER, uid: uidBig, partId: bigPartId },
-        ],
-      }),
+      createDraft(
+        session,
+        cfg,
+        {
+          subject: 'mixed',
+          body: 'x',
+          attachments: [
+            { folder: FOLDER, uid: uidMultipart, partId: pdfPartId },
+            { folder: FOLDER, uid: uidBig, partId: bigPartId },
+          ],
+        },
+        new ComposeBudget(),
+      ),
     ).rejects.toMatchObject({ code: 'cap_exceeded' })
 
     expect(await draftCount()).toBe(before)
@@ -275,11 +349,16 @@ describe('createDraft against a local Dovecot container', () => {
     const before = await draftCount()
 
     await expect(
-      createDraft(session, testConfig(), {
-        subject: 'nope',
-        body: 'x',
-        attachments: [{ folder: FOLDER, uid: uidMultipart, partId: '9.9' }],
-      }),
+      createDraft(
+        session,
+        testConfig(),
+        {
+          subject: 'nope',
+          body: 'x',
+          attachments: [{ folder: FOLDER, uid: uidMultipart, partId: '9.9' }],
+        },
+        new ComposeBudget(),
+      ),
     ).rejects.toMatchObject({ code: 'not_found' })
 
     expect(await draftCount()).toBe(before)
@@ -289,20 +368,81 @@ describe('createDraft against a local Dovecot container', () => {
     const cfg = testConfig({ DRAFTS_NO_RECIPIENTS: 'true' })
     const before = await draftCount()
 
-    await expect(createDraft(session, cfg, { subject: 's', body: 'b', to: ['a@b.example'] })).rejects.toMatchObject({
+    await expect(
+      createDraft(session, cfg, { subject: 's', body: 'b', to: ['a@b.example'] }, new ComposeBudget()),
+    ).rejects.toMatchObject({
       code: 'policy',
       message: expect.stringContaining('DRAFTS_NO_RECIPIENTS'),
     })
-    await expect(createDraft(session, cfg, { subject: 's', body: 'b', cc: ['a@b.example'] })).rejects.toMatchObject({
+    await expect(
+      createDraft(session, cfg, { subject: 's', body: 'b', cc: ['a@b.example'] }, new ComposeBudget()),
+    ).rejects.toMatchObject({
       code: 'policy',
     })
     expect(await draftCount()).toBe(before)
 
-    const ok = await createDraft(session, cfg, { subject: 's', body: 'b' })
+    const ok = await createDraft(session, cfg, { subject: 's', body: 'b' }, new ComposeBudget())
     expect(ok.recipients).toEqual([])
 
     const parsed = await simpleParser(await draftSource(ok.uid!))
     expect(parsed.to).toBeUndefined()
     expect(parsed.cc).toBeUndefined()
+  })
+
+  itIntegration('a reply draft threads under the original and leaves it unanswered and unread', async () => {
+    const result = await createDraft(
+      session,
+      testConfig(),
+      {
+        subject: 'Re: the original',
+        body: 'my answer',
+        inReplyTo: { folder: FOLDER, uid: uidOriginal },
+      },
+      new ComposeBudget(),
+    )
+
+    const parsed = await simpleParser(await draftSource(result.uid!))
+    expect(parsed.inReplyTo).toBe('<original@x.example>')
+    expect(parsed.references).toEqual([
+      '<root@x.example>',
+      '<mid@x.example>',
+      '<parent@x.example>',
+      '<original@x.example>',
+    ])
+
+    const flags = await sourceFlags(uidOriginal)
+    expect(flags).not.toContain('\\Answered')
+    expect(flags).not.toContain('\\Seen')
+  })
+
+  itIntegration('a reply to a message that is gone saves nothing', async () => {
+    const before = await draftCount()
+    await expect(
+      createDraft(
+        session,
+        testConfig(),
+        {
+          subject: 'Re: x',
+          body: 'b',
+          inReplyTo: { folder: FOLDER, uid: 999_999 },
+        },
+        new ComposeBudget(),
+      ),
+    ).rejects.toMatchObject({ code: 'not_found' })
+    expect(await draftCount()).toBe(before)
+  })
+
+  // transcoding to UTF-8 doubles every é, so the part arrives larger than the server declared
+  itIntegration('a windows-1252 part that grows past its declared size is forwarded intact', async () => {
+    const result = await createDraft(
+      session,
+      testConfig({ MAX_ATTACHMENT_MB: '1' }),
+      { subject: 'Fwd', body: 'b', attachments: [{ folder: FOLDER, uid: uidLatin1, partId: '2' }] },
+      new ComposeBudget(),
+    )
+    const parsed = await simpleParser(await draftSource(result.uid!))
+    const attachment = parsed.attachments[0]
+    const charset = (attachment.headers.get('content-type') as { params?: { charset?: string } }).params?.charset
+    expect(new TextDecoder(charset ?? 'utf-8').decode(attachment.content)).toBe('é'.repeat(1000))
   })
 })

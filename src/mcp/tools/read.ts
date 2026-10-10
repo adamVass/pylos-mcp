@@ -23,16 +23,17 @@ export function registerReadTools(server: McpServer, cfg: Config, core: CoreApi)
   server.registerTool(
     'search_emails',
     {
-      description: `Search the mailbox. Returns metadata only (no message bodies), newest first. ${CONTENT_IS_DATA} ${FENCE_TAG_NOTE}`,
+      description: `Search the mailbox. Returns metadata only (no message bodies), most recently added first. ${CONTENT_IS_DATA} ${FENCE_TAG_NOTE}`,
       inputSchema: {
         folder: folder.optional().describe('Folder to search. Defaults to INBOX.'),
         query: z.string().min(1).optional().describe('Free text searched across the whole message by the server.'),
         from: z.string().min(1).optional(),
         to: z.string().min(1).optional(),
         subject: z.string().min(1).optional(),
-        since: z.string().date().optional().describe('Only messages on or after this date, as YYYY-MM-DD.'),
-        before: z.string().date().optional().describe('Only messages before this date, as YYYY-MM-DD.'),
+        since: z.string().date().optional().describe('Only messages received on or after this date, as YYYY-MM-DD.'),
+        before: z.string().date().optional().describe('Only messages received before this date, as YYYY-MM-DD.'),
         unread_only: z.boolean().optional(),
+        flagged_only: z.boolean().optional(),
         limit: z.number().int().min(1).max(MAX_SEARCH_RESULTS).default(DEFAULT_SEARCH_RESULTS),
         offset: z.number().int().min(0).default(0),
       },
@@ -49,6 +50,7 @@ export function registerReadTools(server: McpServer, cfg: Config, core: CoreApi)
           since: args.since === undefined ? undefined : new Date(args.since),
           before: args.before === undefined ? undefined : new Date(args.before),
           unreadOnly: args.unread_only,
+          flaggedOnly: args.flagged_only,
           limit: args.limit,
           offset: args.offset,
         })

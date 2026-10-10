@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { sanitizeFilename, uniquePath } from '../../src/safety/filename.js'
+import { renderAttachmentSaved } from '../../src/safety/render.js'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, basename } from 'node:path'
@@ -52,6 +53,13 @@ describe('sanitizeFilename', () => {
     [' . .hidden', 'hidden'], // interleaved whitespace/dots, exercises the fixpoint loop
   ])('strips leading whitespace+dots regardless of interleaving: %s', (input, expected) => {
     expect(sanitizeFilename(input)).toBe(expected)
+  })
+
+  // the printed path passes through the same defusing, so the file must already carry it
+  it('a name with Markdown image syntax is saved under the name the result prints', () => {
+    const path = `/tmp/${sanitizeFilename('see ![this](x).png')}`
+    expect(path).toBe('/tmp/see !［this](x).png')
+    expect(renderAttachmentSaved(path, 1, 'image/png')).toContain(`\n${path}\n`)
   })
 })
 

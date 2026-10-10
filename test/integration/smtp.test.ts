@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -7,13 +8,15 @@ import { simpleParser } from 'mailparser'
 import { SMTPServer } from 'smtp-server'
 import { makeCoreApi } from '../../src/core/api.js'
 import { ImapSession } from '../../src/core/client.js'
+import { markAnswered } from '../../src/core/mailbox-ops.js'
+import { ComposeBudget } from '../../src/core/draft.js'
 import { SendState, sendEmail } from '../../src/core/smtp.js'
 import { ToolError } from '../../src/errors.js'
-import { itIntegration, seedClient, testCaFile, testConfig } from './helpers.js'
+import { build, itIntegration, seedClient, testCaFile, testConfig } from './helpers.js'
 
 // The SMTP server runs in this process, so most of this suite needs no Docker.
-// The two Sent-copy cases at the end are the exception: filing a copy IS an IMAP
-// append, so they need the Dovecot container.
+// The Sent-copy and replying cases at the end are the exception: both need the
+// Dovecot container.
 
 const PORT = Number(process.env.PYLOS_SMTP_PORT ?? 12525)
 
@@ -133,11 +136,17 @@ describe('sendEmail against an in-process SMTP server', () => {
 
   itIntegration('delivers the message over STARTTLS and reports the accepted recipients', async () => {
     const state = new SendState()
-    const result = await sendEmail(idleSession(), sendConfig(), state, {
-      to: [ALLOWED],
-      subject: 'Quarterly report',
-      body: 'the body text',
-    })
+    const result = await sendEmail(
+      idleSession(),
+      sendConfig(),
+      state,
+      {
+        to: [ALLOWED],
+        subject: 'Quarterly report',
+        body: 'the body text',
+      },
+      new ComposeBudget(),
+    )
 
     expect(result.accepted).toEqual([ALLOWED])
     expect(state.sent).toBe(1)
@@ -150,23 +159,35 @@ describe('sendEmail against an in-process SMTP server', () => {
   })
 
   itIntegration('carries cc recipients in the envelope and the headers', async () => {
-    await sendEmail(idleSession(), sendConfig(), new SendState(), {
-      to: [ALLOWED],
-      cc: ['c@x.example'],
-      subject: 'with a copy',
-      body: 'b',
-    })
+    await sendEmail(
+      idleSession(),
+      sendConfig(),
+      new SendState(),
+      {
+        to: [ALLOWED],
+        cc: ['c@x.example'],
+        subject: 'with a copy',
+        body: 'b',
+      },
+      new ComposeBudget(),
+    )
 
     expect(deliveries[0].rcptTo).toEqual([ALLOWED, 'c@x.example'])
     expect(deliveries[0].raw).toMatch(/^Cc: c@x\.example/im)
   })
 
   itIntegration('a header injected through the subject cannot add a blind-copy recipient', async () => {
-    await sendEmail(idleSession(), sendConfig(), new SendState(), {
-      to: [ALLOWED],
-      subject: 'harmless\r\nBcc: leak@evil.example',
-      body: 'b',
-    })
+    await sendEmail(
+      idleSession(),
+      sendConfig(),
+      new SendState(),
+      {
+        to: [ALLOWED],
+        subject: 'harmless\r\nBcc: leak@evil.example',
+        body: 'b',
+      },
+      new ComposeBudget(),
+    )
 
     // the break is folded away, so the address stays inside the subject text
     // instead of starting a header of its own
@@ -179,11 +200,17 @@ describe('sendEmail against an in-process SMTP server', () => {
     const cfg = sendConfig({ SEND_ALLOWLIST: ALLOWED })
     const state = new SendState()
 
-    const error = await sendEmail(idleSession(), cfg, state, {
-      to: [ALLOWED, OUTSIDE],
-      subject: 's',
-      body: 'b',
-    }).catch((e: unknown) => e)
+    const error = await sendEmail(
+      idleSession(),
+      cfg,
+      state,
+      {
+        to: [ALLOWED, OUTSIDE],
+        subject: 's',
+        body: 'b',
+      },
+      new ComposeBudget(),
+    ).catch((e: unknown) => e)
 
     expect(error).toBeInstanceOf(ToolError)
     expect((error as ToolError).code).toBe('policy')
@@ -200,7 +227,13 @@ describe('sendEmail against an in-process SMTP server', () => {
     const cfg = sendConfig({ SEND_ALLOWLIST: ALLOWED })
 
     await expect(
-      sendEmail(idleSession(), cfg, new SendState(), { to: [ALLOWED], cc: [OUTSIDE], subject: 's', body: 'b' }),
+      sendEmail(
+        idleSession(),
+        cfg,
+        new SendState(),
+        { to: [ALLOWED], cc: [OUTSIDE], subject: 's', body: 'b' },
+        new ComposeBudget(),
+      ),
     ).rejects.toMatchObject({ code: 'policy' })
 
     expect(deliveries).toEqual([])
@@ -210,12 +243,16 @@ describe('sendEmail against an in-process SMTP server', () => {
     const cfg = sendConfig({ SEND_SESSION_CAP: '2' })
     const state = new SendState()
 
-    await sendEmail(idleSession(), cfg, state, { to: [ALLOWED], subject: 'one', body: 'b' })
-    await sendEmail(idleSession(), cfg, state, { to: [ALLOWED], subject: 'two', body: 'b' })
+    await sendEmail(idleSession(), cfg, state, { to: [ALLOWED], subject: 'one', body: 'b' }, new ComposeBudget())
+    await sendEmail(idleSession(), cfg, state, { to: [ALLOWED], subject: 'two', body: 'b' }, new ComposeBudget())
 
-    const error = await sendEmail(idleSession(), cfg, state, { to: [ALLOWED], subject: 'three', body: 'b' }).catch(
-      (e: unknown) => e,
-    )
+    const error = await sendEmail(
+      idleSession(),
+      cfg,
+      state,
+      { to: [ALLOWED], subject: 'three', body: 'b' },
+      new ComposeBudget(),
+    ).catch((e: unknown) => e)
 
     expect(error).toBeInstanceOf(ToolError)
     expect((error as ToolError).code).toBe('policy')
@@ -230,15 +267,15 @@ describe('sendEmail against an in-process SMTP server', () => {
     const state = new SendState()
 
     await expect(
-      sendEmail(idleSession(), cfg, state, { to: [REFUSED], subject: 'rejected', body: 'b' }),
+      sendEmail(idleSession(), cfg, state, { to: [REFUSED], subject: 'rejected', body: 'b' }, new ComposeBudget()),
     ).rejects.toBeInstanceOf(ToolError)
     expect(state.sent).toBe(0)
     // the reservation the cap check took is released too, or the budget would
     // shrink by one for the rest of the session on every failed send
     expect(state.inFlight).toBe(0)
 
-    await sendEmail(idleSession(), cfg, state, { to: [ALLOWED], subject: 'one', body: 'b' })
-    await sendEmail(idleSession(), cfg, state, { to: [ALLOWED], subject: 'two', body: 'b' })
+    await sendEmail(idleSession(), cfg, state, { to: [ALLOWED], subject: 'one', body: 'b' }, new ComposeBudget())
+    await sendEmail(idleSession(), cfg, state, { to: [ALLOWED], subject: 'two', body: 'b' }, new ComposeBudget())
 
     expect(state.sent).toBe(2)
     expect(deliveries).toHaveLength(2)
@@ -252,8 +289,8 @@ describe('sendEmail against an in-process SMTP server', () => {
     const state = new SendState()
 
     const outcomes = await Promise.allSettled([
-      sendEmail(idleSession(), cfg, state, { to: [ALLOWED], subject: 'race one', body: 'b' }),
-      sendEmail(idleSession(), cfg, state, { to: [ALLOWED], subject: 'race two', body: 'b' }),
+      sendEmail(idleSession(), cfg, state, { to: [ALLOWED], subject: 'race one', body: 'b' }, new ComposeBudget()),
+      sendEmail(idleSession(), cfg, state, { to: [ALLOWED], subject: 'race two', body: 'b' }, new ComposeBudget()),
     ])
 
     expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1)
@@ -268,11 +305,17 @@ describe('sendEmail against an in-process SMTP server', () => {
   })
 
   itIntegration('a recipient the server refuses is named in the result, never silently dropped', async () => {
-    const result = await sendEmail(idleSession(), sendConfig(), new SendState(), {
-      to: [ALLOWED, REFUSED],
-      subject: 'partly refused',
-      body: 'b',
-    })
+    const result = await sendEmail(
+      idleSession(),
+      sendConfig(),
+      new SendState(),
+      {
+        to: [ALLOWED, REFUSED],
+        subject: 'partly refused',
+        body: 'b',
+      },
+      new ComposeBudget(),
+    )
 
     // nodemailer resolves rather than throwing when only SOME recipients are
     // refused, so without this the user is told the message simply went
@@ -288,11 +331,17 @@ describe('sendEmail against an in-process SMTP server', () => {
   })
 
   itIntegration("the SMTP server's own refusal text never reaches the caller", async () => {
-    const error = await sendEmail(idleSession(), sendConfig(), new SendState(), {
-      to: [REFUSED],
-      subject: 's',
-      body: 'b',
-    }).catch((e: unknown) => e)
+    const error = await sendEmail(
+      idleSession(),
+      sendConfig(),
+      new SendState(),
+      {
+        to: [REFUSED],
+        subject: 's',
+        body: 'b',
+      },
+      new ComposeBudget(),
+    ).catch((e: unknown) => e)
 
     expect(error).toBeInstanceOf(ToolError)
     expect((error as ToolError).code).toBe('server')
@@ -311,12 +360,18 @@ describe('sendEmail against an in-process SMTP server', () => {
     } as unknown as ImapSession
 
     await expect(
-      sendEmail(failingSession, sendConfig(), state, {
-        to: [ALLOWED],
-        subject: 's',
-        body: 'b',
-        attachments: [{ folder: 'INBOX', uid: 1, partId: '2' }],
-      }),
+      sendEmail(
+        failingSession,
+        sendConfig(),
+        state,
+        {
+          to: [ALLOWED],
+          subject: 's',
+          body: 'b',
+          attachments: [{ folder: 'INBOX', uid: 1, partId: '2' }],
+        },
+        new ComposeBudget(),
+      ),
     ).rejects.toMatchObject({ code: 'cap_exceeded' })
 
     expect(deliveries).toEqual([])
@@ -335,11 +390,17 @@ describe('sendEmail against an in-process SMTP server', () => {
       },
     } as unknown as ImapSession
 
-    const result = await sendEmail(unreachableSent, sendConfig({ SEND_SAVE_COPY: 'true' }), state, {
-      to: [ALLOWED],
-      subject: 'filed nowhere',
-      body: 'b',
-    })
+    const result = await sendEmail(
+      unreachableSent,
+      sendConfig({ SEND_SAVE_COPY: 'true' }),
+      state,
+      {
+        to: [ALLOWED],
+        subject: 'filed nowhere',
+        body: 'b',
+      },
+      new ComposeBudget(),
+    )
 
     expect(result.accepted).toEqual([ALLOWED])
     expect(result.copy).toEqual({ status: 'failed' })
@@ -476,11 +537,17 @@ describe('sendEmail against an in-process SMTP server', () => {
     itIntegration('a successful send leaves one copy in the Sent folder, marked read', async () => {
       const before = await sentUids()
 
-      const result = await sendEmail(session, savingConfig(), new SendState(), {
-        to: [ALLOWED],
-        subject: 'Filed copy',
-        body: 'the body text',
-      })
+      const result = await sendEmail(
+        session,
+        savingConfig(),
+        new SendState(),
+        {
+          to: [ALLOWED],
+          subject: 'Filed copy',
+          body: 'the body text',
+        },
+        new ComposeBudget(),
+      )
 
       expect(result.copy).toEqual({ status: 'saved', folder: SENT })
 
@@ -508,16 +575,150 @@ describe('sendEmail against an in-process SMTP server', () => {
     itIntegration('with SEND_SAVE_COPY=false the message goes out and Sent gains nothing', async () => {
       const before = await sentUids()
 
-      const result = await sendEmail(session, savingConfig({ SEND_SAVE_COPY: 'false' }), new SendState(), {
-        to: [ALLOWED],
-        subject: 'Not filed',
-        body: 'b',
-      })
+      const result = await sendEmail(
+        session,
+        savingConfig({ SEND_SAVE_COPY: 'false' }),
+        new SendState(),
+        {
+          to: [ALLOWED],
+          subject: 'Not filed',
+          body: 'b',
+        },
+        new ComposeBudget(),
+      )
 
       expect(result.copy).toEqual({ status: 'off' })
       expect(result.accepted).toEqual([ALLOWED])
       expect(deliveries).toHaveLength(1)
       expect(await sentUids()).toEqual(before)
+    })
+  })
+
+  describe('replying', () => {
+    const FOLDER = 'T5Replies'
+    const ELSEWHERE = 'T5Moved'
+
+    let session: ImapSession
+    let seeder: ImapFlow | undefined
+
+    async function inFolder<T>(path: string, fn: () => Promise<T>): Promise<T> {
+      const lock = await seeder!.getMailboxLock(path)
+      try {
+        await seeder!.noop()
+        return await fn()
+      } finally {
+        lock.release()
+      }
+    }
+
+    async function flagsOf(uid: number): Promise<Set<string>> {
+      return inFolder(FOLDER, async () => {
+        const message = await seeder!.fetchOne(String(uid), { flags: true }, { uid: true })
+        if (!message) throw new Error(`no message with uid ${uid} in ${FOLDER}`)
+        return message.flags ?? new Set<string>()
+      })
+    }
+
+    async function seedOriginal(): Promise<{ uid: number; messageId: string }> {
+      const messageId = `<${randomUUID()}@x.example>`
+      const raw = await build({
+        from: 'Sender <sender@x.example>',
+        to: USER,
+        subject: 'question',
+        text: 'q',
+        messageId,
+        references: ['<root@x.example>'],
+      })
+      const appended = await seeder!.append(FOLDER, raw, [])
+      if (!appended || appended.uid === undefined) throw new Error(`APPEND to ${FOLDER} returned no UID`)
+      return { uid: appended.uid, messageId }
+    }
+
+    beforeAll(async () => {
+      if (!process.env.RUN_INTEGRATION) return
+      // the account the session sends as, so the seeded original sits in its mailbox
+      seeder = seedClient(sendConfig())
+      seeder.on('error', () => {})
+      await seeder.connect()
+      await seeder.mailboxCreate(FOLDER).catch(() => undefined)
+      await seeder.mailboxCreate(ELSEWHERE).catch(() => undefined)
+      session = new ImapSession(sendConfig())
+    }, 120_000)
+
+    afterAll(async () => {
+      await session?.close()
+      await seeder?.logout().catch(() => undefined)
+    })
+
+    itIntegration('a sent reply carries the thread headers and marks the original answered', async () => {
+      const original = await seedOriginal()
+      const ref = { folder: FOLDER, uid: original.uid }
+
+      const result = await sendEmail(
+        session,
+        sendConfig(),
+        new SendState(),
+        {
+          to: [ALLOWED],
+          subject: 'Re: question',
+          body: 'answer',
+          inReplyTo: ref,
+        },
+        new ComposeBudget(),
+      )
+
+      expect(result.reply).toEqual({ ref, answered: true })
+      const parsed = await simpleParser(deliveries[0].raw)
+      expect(parsed.inReplyTo).toBe(original.messageId)
+      expect(parsed.references).toEqual(['<root@x.example>', original.messageId])
+      expect(await flagsOf(original.uid)).toContain('\\Answered')
+    })
+
+    itIntegration('a reply the relay refuses leaves the original unanswered', async () => {
+      const original = await seedOriginal()
+      await expect(
+        sendEmail(
+          session,
+          sendConfig(),
+          new SendState(),
+          {
+            to: [REFUSED],
+            subject: 'Re: question',
+            body: 'b',
+            inReplyTo: { folder: FOLDER, uid: original.uid },
+          },
+          new ComposeBudget(),
+        ),
+      ).rejects.toBeInstanceOf(ToolError)
+      expect(await flagsOf(original.uid)).not.toContain('\\Answered')
+    })
+
+    itIntegration('a reply to a message that is gone sends nothing and spends no slot', async () => {
+      const state = new SendState()
+      await expect(
+        sendEmail(
+          session,
+          sendConfig(),
+          state,
+          {
+            to: [ALLOWED],
+            subject: 'Re: x',
+            body: 'b',
+            inReplyTo: { folder: FOLDER, uid: 999_999 },
+          },
+          new ComposeBudget(),
+        ),
+      ).rejects.toMatchObject({ code: 'not_found' })
+      expect(deliveries).toEqual([])
+      expect(connections).toBe(0)
+      expect(state.sent).toBe(0)
+      expect(state.inFlight).toBe(0)
+    })
+
+    itIntegration('an original moved away before it could be marked reports answered: false', async () => {
+      const original = await seedOriginal()
+      await inFolder(FOLDER, () => seeder!.messageMove(String(original.uid), ELSEWHERE, { uid: true }))
+      expect(await markAnswered(session, { folder: FOLDER, uid: original.uid })).toBe(false)
     })
   })
 })
