@@ -2,6 +2,35 @@
 
 Notable changes to pylos-mcp. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-10-10
+
+### Added
+
+- `create_draft` and `send_email` take `in_reply_to` with the original's folder and uid, so a reply carries the headers mail clients use to thread it under the original. The server builds the threading headers itself and never takes recipients from the original. After a reply is sent, the original is marked as answered, and the result says so if that could not be done.
+- `get_email` shows when a message was sent and when it was received, and a Cc line.
+- `search_emails` takes `flagged_only`.
+- Text parts the body does not show, such as the second half of a body split around an image, are listed with the attachments instead of disappearing.
+
+### Changed
+
+- Search results show the date each message was received, which is the date `since` and `before` filter on.
+- Base64 attachments are listed at about the size of the file they hold, rather than its larger encoded size.
+- `MAX_ATTACHMENT_MB` now caps all the attachments of one message together, and of every message being composed at once. Ten 25 MB attachments no longer fit in one call.
+
+### Security
+
+- `<img` in plain text is defused like Markdown images, so a client that renders the result fetches no tracking pixel.
+- An HTML document sent as plain text is converted and inspected like any HTML mail, so text it hides now raises a warning.
+- Hidden text nested about 500 levels deep could reach the model without a warning, in fragments and in full HTML documents. The text is now converted from exactly what the hidden-text check inspected.
+- More Cyrillic letters that pass for Latin ones raise `mixed_script`.
+- HTML inside xmp, noscript, iframe, noembed, noframes and plaintext elements is inspected and converted as ordinary text, so it can no longer slip hidden text past the warning or replace the message body.
+
+### Fixed
+
+- A forwarded message could be shown as the body of the message forwarding it. It is now listed as a downloadable `.eml`.
+- A message with an empty plain-text part showed no text. Its HTML version is used instead.
+- An attachment whose name contained `![` was saved under a different name from the one reported.
+
 ## [0.4.1] - 2026-10-09
 
 ### Fixed
@@ -90,6 +119,7 @@ A configuration that loaded on 0.2.0 can now fail at startup, if `SEND_ALLOWLIST
 - Warnings for hidden text, instruction-like phrases and long encoded runs.
 - Provider presets for Gmail, iCloud, Yahoo, GMX, Fastmail, mailbox.org and Posteo.
 
+[0.5.0]: https://github.com/adamVass/pylos-mcp/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/adamVass/pylos-mcp/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/adamVass/pylos-mcp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/adamVass/pylos-mcp/compare/v0.2.0...v0.3.0
