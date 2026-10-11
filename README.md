@@ -12,6 +12,7 @@
   <a href="https://www.npmjs.com/package/pylos-mcp"><img src="https://img.shields.io/npm/v/pylos-mcp" alt="npm version"></a>
   <a href="https://github.com/adamVass/pylos-mcp/actions/workflows/ci.yml"><img src="https://github.com/adamVass/pylos-mcp/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/pylos-mcp" alt="MIT license"></a>
+  <a href="https://www.bestpractices.dev/projects/15385"><img src="https://www.bestpractices.dev/projects/15385/badge" alt="OpenSSF Best Practices"></a>
 </p>
 
 <p align="center">
@@ -35,7 +36,7 @@ Anyone in the world can put text in your inbox, and the moment an AI assistant r
 
 ## Quick start
 
-pylos-mcp runs locally through `npx` and needs Node.js 20 or later. Every route below starts from example values, so replace the address and password with your own. Use an app password, not your account's regular password. [Provider setup](#provider-setup) says where to get one.
+pylos-mcp runs locally through `npx` and needs Node.js 22 or later. Every route below starts from example values, so replace the address and password with your own. Use an app password, not your account's regular password. [Provider setup](#provider-setup) says where to get one.
 
 **Claude Desktop.** Download [pylos-mcp.mcpb](https://github.com/adamVass/pylos-mcp/releases/latest/download/pylos-mcp.mcpb), open it, and fill in the form Desktop shows.
 
@@ -224,7 +225,7 @@ All configuration is environment variables. They are checked when the server sta
 | `MS_CLIENT_ID` | pylos-mcp's own | With `outlook` only. The application ID of an app registered in your organization's tenant. |
 | `MS_TENANT` | `common` | With `outlook` only. Your tenant ID or domain, needed when `MS_CLIENT_ID` names an app registered for one tenant only. |
 | `IMAP_HOST` / `IMAP_PORT` | preset / `993` | Explicit values for your own server. Set either to override the preset. |
-| `IMAP_STARTTLS` | `false` | Connect in plain text and switch to TLS with STARTTLS before logging in, for servers that offer IMAP only that way. The default port becomes `143`. A server that will not switch is refused, and nothing is ever sent unencrypted. |
+| `IMAP_STARTTLS` | `false` | Connect in plain text and switch to TLS with STARTTLS before logging in, for servers that offer IMAP only that way. The default port becomes `143`. A server that will not switch is refused, so the login is never sent unencrypted. |
 | `SMTP_HOST` / `SMTP_PORT` | preset / `465`, `587` for `outlook` | Required only when `send` is enabled. |
 | `SIEVE_HOST` / `SIEVE_PORT` | `IMAP_HOST` / `4190` | Used only when `sieve-read` is enabled. |
 | `CAPABILITIES` | `drafts` | Tiers beyond `read`, which is always included, separated by commas. |

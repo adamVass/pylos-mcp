@@ -6,7 +6,7 @@ pylos-mcp is small on purpose, and the security posture in the README's "What th
 
 - The boundaries in "What this can never do" define the project rather than limit it. No raw HTML to the model, no `bcc`, no expunge, no Sieve write access, no option that weakens TLS verification. If your use case genuinely needs one of those, that is a different project rather than a bad idea, and a fork is the right home for it. The codebase is small and MIT licensed precisely so that forking it is pleasant.
 - No test may touch a real mail server. Unit and MCP tests run entirely offline, integration tests run against the disposable local Dovecot container. A PR whose tests need real credentials cannot go in.
-- Tests cover the edge cases and invariants that matter, one good test per behavior. Combinatorial padding slows the suite without adding confidence.
+- New behavior and every bug fix come with a test that fails without the change. Tests cover the edge cases and invariants that matter, one good test per behavior. Combinatorial padding slows the suite without adding confidence.
 - New runtime dependencies need a strong case. For small things, plain code beats an import.
 
 ## Wishlist

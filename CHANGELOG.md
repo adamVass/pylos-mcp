@@ -2,7 +2,9 @@
 
 Notable changes to pylos-mcp. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.0] - 2026-10-11
+
+The first stable release. SECURITY.md says what stays stable within 1.x and which versions get security fixes.
 
 ### Added
 
@@ -19,13 +21,14 @@ Notable changes to pylos-mcp. The format follows [Keep a Changelog](https://keep
 - The README starts with install buttons and per client setup, compares the approach with gaps email servers can have, and answers common questions.
 - One description everywhere: "Email MCP server for Gmail, Outlook and any IMAP mailbox, hardened against prompt injection".
 - The Claude Desktop form mentions that `*` lets sending reach anyone.
-- Attachments download in 1 MB pieces instead of 64 kB, so a 25 MB file takes about 32 round trips to the server rather than about 500.
+- Attachments download in 1 MB pieces instead of 64 kB, so a 25 MB file takes about 25 round trips to the server rather than about 500.
 - `get_email` fetches the message headers only when there is a receiving server's verdict to read in them, and attachment downloads fetch only the message structure.
 - The Sent and Drafts folders are looked up once per connection instead of on every draft, send and thread.
 
 ### Security
 
 - Three checks on text a sender controls took time growing with the square of its length: a From display name, an inline style value and a body full of invalid bytes. One crafted message could stall the server for several seconds per call. All three now run in linear time.
+- Release builds and tests run without the npm publishing identity, and only the packed tarball reaches the step that publishes. A compromised development dependency can no longer publish a version.
 
 ## [0.6.0] - 2026-10-11
 
@@ -155,6 +158,7 @@ A configuration that loaded on 0.2.0 can now fail at startup, if `SEND_ALLOWLIST
 - Warnings for hidden text, instruction-like phrases and long encoded runs.
 - Provider presets for Gmail, iCloud, Yahoo, GMX, Fastmail, mailbox.org and Posteo.
 
+[1.0.0]: https://github.com/adamVass/pylos-mcp/compare/v0.6.0...v1.0.0
 [0.6.0]: https://github.com/adamVass/pylos-mcp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/adamVass/pylos-mcp/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/adamVass/pylos-mcp/compare/v0.4.0...v0.4.1
