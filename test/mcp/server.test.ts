@@ -16,7 +16,7 @@ const BASE_ENV = { EMAIL_USER: 'tester@example.com', EMAIL_PASSWORD: 'pw', IMAP_
 /** built from its code point because the character is, by definition, invisible here */
 const ZERO_WIDTH = String.fromCharCode(0x200b)
 
-const READ_TOOLS = ['get_attachment', 'get_email', 'list_folders', 'search_emails']
+const READ_TOOLS = ['get_attachment', 'get_email', 'get_thread', 'list_folders', 'search_emails']
 const MANAGE_TOOLS = ['move_email', 'set_flags']
 const DELETE_TOOLS = ['delete_email']
 const SEND_TOOLS = ['send_email']
@@ -64,6 +64,10 @@ function fakeCore(calls: Calls): CoreApi {
     async getEmail(folder, uid) {
       calls.getEmail = [folder, uid]
       return email()
+    },
+    async getThread(folder, uid) {
+      calls.getThread = [folder, uid]
+      return { items: [summary()], omitted: 0 }
     },
     async getAttachment(folder, uid, partId) {
       calls.getAttachment = [folder, uid, partId]

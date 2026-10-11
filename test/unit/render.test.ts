@@ -4,6 +4,7 @@ import { makeUntrusted } from '../../src/safety/untrusted.js'
 import {
   renderEmail,
   renderSearchResults,
+  renderThread,
   renderSent,
   renderAttachmentSaved,
   renderDeleted,
@@ -647,4 +648,25 @@ it('dmarc_fail is the server reporting its own check, and its toggle silences it
   )
   expect(renderEmail(email({ dmarcFailed: true }), 64, DETECT_OFF)).not.toContain('Warnings:')
   expect(renderEmail(email(), 64, { ...DETECT_OFF, dmarcFail: true })).not.toContain('Warnings:')
+})
+
+it('a thread says how many it holds and how many older ones it left out', () => {
+  const row = {
+    folder: 'INBOX',
+    uid: 3,
+    date: new Date('2026-10-01T09:00:00Z'),
+    sizeBytes: 2048,
+    from: makeUntrusted('Alice <alice@x.example>'),
+    subject: makeUntrusted('Re: plans'),
+    seen: true,
+    flagged: false,
+  }
+  const out = renderThread({ items: [row], omitted: 2 })
+  expect(out.split('\n')[0]).toBe(
+    'Thread of 3 message(s), showing the newest 1, oldest first. Read each with get_email:',
+  )
+  expect(out).toContain('INBOX uid 3 | 2026-10-01 | Alice <alice@x.example> | Re: plans | 2.0 kB | read')
+  expect(renderThread({ items: [row], omitted: 0 }).split('\n')[0]).toBe(
+    'Thread of 1 message(s), oldest first. Read each with get_email:',
+  )
 })

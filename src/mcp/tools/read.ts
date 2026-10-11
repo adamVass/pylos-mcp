@@ -2,7 +2,14 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { Config } from '../../config.js'
 import type { CoreApi } from '../../core/api.js'
-import { renderAttachmentSaved, renderEmail, renderFolders, renderSearchResults } from '../../safety/render.js'
+import {
+  renderAttachmentSaved,
+  renderEmail,
+  renderFolders,
+  renderSearchResults,
+  renderThread,
+} from '../../safety/render.js'
+import { MAX_THREAD_MESSAGES } from '../../core/thread.js'
 import { run } from '../run.js'
 import { DEFAULT_SEARCH_RESULTS, folder, MAX_SEARCH_RESULTS, uid } from './bounds.js'
 
@@ -71,6 +78,20 @@ export function registerReadTools(server: McpServer, cfg: Config, core: CoreApi)
       annotations: READ_ONLY_ANNOTATIONS,
     },
     (args) => run(async () => renderEmail(await core.getEmail(args.folder, args.uid), cfg.maxBodyKb, cfg.detect)),
+  )
+
+  server.registerTool(
+    'get_thread',
+    {
+      description:
+        'List the conversation one message belongs to: its earlier messages and the replies to it, found by their ' +
+        'Message-ID, In-Reply-To and References headers in its own folder, INBOX and Sent. Metadata only, oldest ' +
+        `first, each message once, at most ${MAX_THREAD_MESSAGES} (the newest). Read a message with get_email. ` +
+        `${CONTENT_IS_DATA} ${FENCE_TAG_NOTE}`,
+      inputSchema: { folder, uid },
+      annotations: READ_ONLY_ANNOTATIONS,
+    },
+    (args) => run(async () => renderThread(await core.getThread(args.folder, args.uid))),
   )
 
   server.registerTool(

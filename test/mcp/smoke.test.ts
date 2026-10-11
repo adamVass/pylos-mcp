@@ -14,7 +14,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const ENTRY = path.join(ROOT, 'dist/index.js')
 
-const DEFAULT_FIVE = ['create_draft', 'get_attachment', 'get_email', 'list_folders', 'search_emails']
+const DEFAULT_SIX = ['create_draft', 'get_attachment', 'get_email', 'get_thread', 'list_folders', 'search_emails']
 
 // Reads the same package.json the compiled server reads its own version from, at
 // the depth the published tarball actually has (dist/mcp/server.js, two levels
@@ -27,7 +27,7 @@ beforeAll(() => {
   execFileSync('npm', ['run', 'build'], { cwd: ROOT, stdio: 'inherit' })
 }, 120_000)
 
-it('lists the default five tools over real stdio without connecting to IMAP', async () => {
+it('lists the default six tools over real stdio without connecting to IMAP', async () => {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [ENTRY],
@@ -40,7 +40,7 @@ it('lists the default five tools over real stdio without connecting to IMAP', as
     expect(client.getServerVersion()?.version).toBe(packageVersion)
 
     const { tools } = await client.listTools()
-    expect(tools.map((tool) => tool.name).sort()).toEqual(DEFAULT_FIVE)
+    expect(tools.map((tool) => tool.name).sort()).toEqual(DEFAULT_SIX)
   } finally {
     await client.close()
   }

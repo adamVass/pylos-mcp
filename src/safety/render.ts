@@ -266,23 +266,32 @@ export function renderEmail(e: RenderableEmail, maxBodyKb: number, detect: Detec
   return out.join('\n')
 }
 
-export function renderSearchResults(total: number, offset: number, items: RenderableSummary[]): string {
-  const lines = items.map((m) => {
-    const parts = [
-      `${line(m.folder)} uid ${m.uid}`,
-      formatDay(m.date),
-      presentLine(m.from),
-      presentLine(m.subject),
-      formatSize(m.sizeBytes),
-      m.seen ? 'read' : 'unread',
-    ]
-    if (m.flagged) parts.push('flagged')
-    return parts.join(' | ')
-  })
+function summaryLine(m: RenderableSummary): string {
+  const parts = [
+    `${line(m.folder)} uid ${m.uid}`,
+    formatDay(m.date),
+    presentLine(m.from),
+    presentLine(m.subject),
+    formatSize(m.sizeBytes),
+    m.seen ? 'read' : 'unread',
+  ]
+  if (m.flagged) parts.push('flagged')
+  return parts.join(' | ')
+}
 
+export function renderSearchResults(total: number, offset: number, items: RenderableSummary[]): string {
   return [
     `Found ${total} message(s), showing ${items.length} from offset ${offset} (most recently added first):`,
-    ...fence(lines),
+    ...fence(items.map(summaryLine)),
+  ].join('\n')
+}
+
+export function renderThread(thread: { items: RenderableSummary[]; omitted: number }): string {
+  const { items, omitted } = thread
+  const shown = omitted > 0 ? `, showing the newest ${items.length}` : ''
+  return [
+    `Thread of ${items.length + omitted} message(s)${shown}, oldest first. Read each with get_email:`,
+    ...fence(items.map(summaryLine)),
   ].join('\n')
 }
 

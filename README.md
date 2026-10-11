@@ -118,7 +118,7 @@ Capabilities are independent switches, not a ladder. Reading is always on, draft
 
 | Tier | Default | Tools |
 |---|---|---|
-| `read` | always on | `search_emails`, `get_email`, `get_attachment`, `list_folders` |
+| `read` | always on | `search_emails`, `get_email`, `get_thread`, `get_attachment`, `list_folders` |
 | `drafts` | on | `create_draft` |
 | `manage` | off | `move_email`, `set_flags` |
 | `send` | off | `send_email` |
@@ -128,6 +128,8 @@ Capabilities are independent switches, not a ladder. Reading is always on, draft
 Enable more with a comma-separated list, for example `CAPABILITIES=drafts,manage,delete`.
 
 Moving a message into Trash is a delete by another route, so `move_email` refuses Trash unless `delete` is on too.
+
+`get_thread` lists the conversation a message belongs to: the messages it replies to, and the replies that name it or an earlier message in the thread, from its own folder, INBOX and Sent, oldest first and each message once. It lists, and `get_email` reads, so every message still gets its own warnings.
 
 To answer a message, `create_draft` and `send_email` take `in_reply_to` with its folder and uid, and the reply carries the headers mail clients use to thread it under the original. `search_emails` can narrow results to flagged mail with `flagged_only`.
 

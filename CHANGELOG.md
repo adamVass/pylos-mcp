@@ -6,6 +6,7 @@ Notable changes to pylos-mcp. The format follows [Keep a Changelog](https://keep
 
 ### Added
 
+- `get_thread` lists the conversation a message belongs to, from its own folder, INBOX and Sent, oldest first, each message once and at most 50.
 - `get_email` warns with `dmarc_fail` when your own mail server's DMARC check on the message failed. Only the header your provider wrote counts, recognized by its server name, which the presets know for Gmail, Outlook, mailbox.org, GMX, Posteo and Fastmail. `AUTHSERV_ID` sets it elsewhere, and `FLAG_DMARC_FAIL=false` turns the warning off.
 - `IMAP_STARTTLS=true` connects to servers that offer IMAP only through STARTTLS, such as Proton Bridge in its default mode. The switch to TLS has to succeed before the login is sent, and a server that does not offer it is refused.
 

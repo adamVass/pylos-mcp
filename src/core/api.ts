@@ -10,12 +10,14 @@ import { listFolders, type FolderSummary } from './folders.js'
 import { deleteEmail, moveEmail, refuseTrash, setFlags, type DeleteResult } from './mailbox-ops.js'
 import { getAttachment, getEmail, type AttachmentResult } from './message.js'
 import { searchEmails, type SearchArgs } from './search.js'
+import { getThread, type Thread } from './thread.js'
 import { getSieveScript, listSieveScripts, type SieveScript, type SieveScriptEntry } from './sieve.js'
 import { SendState, sendEmail, type SendArgs, type SendResult } from './smtp.js'
 
 export interface CoreApi {
   searchEmails(args: SearchArgs): Promise<{ total: number; items: RenderableSummary[] }>
   getEmail(folder: string, uid: number): Promise<RenderableEmail>
+  getThread(folder: string, uid: number): Promise<Thread>
   getAttachment(folder: string, uid: number, partId: string): Promise<AttachmentResult>
   listFolders(): Promise<FolderSummary[]>
   createDraft(args: DraftArgs): Promise<DraftResult>
@@ -34,6 +36,9 @@ export function makeCoreApi(cfg: Config, session: ImapSession): CoreApi {
   return {
     searchEmails: (args) => searchEmails(session, args),
     getEmail: (folder, uid) => getEmail(session, folder, uid, cfg.maxBodyKb, cfg.authservIds),
+    // a sent reply lives in Sent, and the other side of the conversation usually in INBOX
+    getThread: async (folder, uid) =>
+      getThread(session, folder, uid, ['INBOX', await session.specialUse('\\Sent', 'Sent')]),
     getAttachment: (folder, uid, partId) => getAttachment(session, cfg, folder, uid, partId),
     listFolders: () => listFolders(session),
     // Unreachable in principle, since a tool that was never registered cannot be

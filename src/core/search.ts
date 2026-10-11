@@ -75,7 +75,7 @@ async function summarize(client: ImapFlow, folder: string, uids: number[]): Prom
   })
 }
 
-function toSummary(folder: string, message: FetchMessageObject): RenderableSummary {
+export function toSummary(folder: string, message: FetchMessageObject): RenderableSummary {
   return {
     folder,
     uid: message.uid,
