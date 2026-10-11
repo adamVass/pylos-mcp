@@ -73,4 +73,9 @@ describe('trustedDmarcFailed', () => {
     ).toBe(true)
     expect(trustedDmarcFailed(at('spf=pass (domain of x\\(@evil.example) smtp.mailfrom=x; dmarc=fail'), ids)).toBe(true)
   })
+  it('a quoted authserv-id is the same id, and a semicolon inside it splits nothing', () => {
+    const ids = ['mx.google.com']
+    expect(trustedDmarcFailed(block('Authentication-Results: "mx.google.com"; dmarc=fail'), ids)).toBe(true)
+    expect(trustedDmarcFailed(block('Authentication-Results: "mx.google.com;x"; dmarc=fail'), ids)).toBe(false)
+  })
 })

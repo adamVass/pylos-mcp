@@ -16,13 +16,17 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
-  publish:
+  # Everything that runs dependency code happens here, without the OIDC token:
+  # an install script or a compromised dev tool could otherwise mint one that npm
+  # trusted publishing accepts for this workflow.
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # The tag is what a human types, the version is what gets published, and
       # nothing else in this pipeline compares them. Without this, pushing
       # v0.2.0 at a tree whose package.json still says 0.1.0 publishes 0.1.0
@@ -41,22 +45,42 @@ jobs:
               exit 1
             fi
           done
-      # Node 24 because trusted publishing needs npm 11.5.1 or newer, and Node 22
-      # bundles npm 10. No dependency cache: a publish job should not restore
-      # state another workflow run could have written.
+      # No dependency cache: a release build should not restore state another
+      # workflow run could have written.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
-          registry-url: https://registry.npmjs.org
       - run: npm ci
       # The same gates CI runs, repeated here: a tag can be pushed without a
       # green CI run, and this is the last point before the package is public.
       - run: npm run format:check
       - run: npm run typecheck
       - run: npm test
-      # No explicit build step: prepublishOnly runs `npm run build` for us, so
-      # the published dist is always compiled from the commit being published.
-      - run: npm publish
+      # npm pack skips prepublishOnly, so the build is explicit
+      - run: npm run build
+      - run: npm pack
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package
+          path: pylos-mcp-*.tgz
+
+  # Publishes the tarball built above and runs nothing else. Node 24 because
+  # trusted publishing needs npm 11.5.1 or newer, and Node 22 bundles npm 10.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: package
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+      - run: npm publish --provenance --ignore-scripts "pylos-mcp-${GITHUB_REF_NAME#v}.tgz"
 
   # Signs in to the MCP registry with this run's OIDC identity, which the
   # registry maps to the io.github.adamVass namespace, so no login or token is

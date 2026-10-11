@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import type { AddressInfo } from 'node:net'
 import { dirname, join } from 'node:path'
 import { createServer as createTlsServer } from 'node:tls'
+import { ImapFlow } from 'imapflow'
 import { describe, expect, vi } from 'vitest'
 import { ImapSession } from '../../src/core/client.js'
 import { ToolError } from '../../src/errors.js'
@@ -150,6 +151,21 @@ describe('ImapSession against a local Dovecot container', () => {
       await s.specialUse('\\Trash', 'Trash')
       expect(list).toHaveBeenCalledTimes(3)
     } finally {
+      await s.close()
+    }
+  })
+
+  itIntegration('a lost connection drops the remembered folders before the next lookup', async () => {
+    const s = new ImapSession(testConfig())
+    const list = vi.spyOn(ImapFlow.prototype, 'list')
+    try {
+      await s.specialUse('\\Drafts', 'Drafts')
+      ;(await s.withClient(async (c) => c)).close()
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      await s.specialUse('\\Drafts', 'Drafts')
+      expect(list).toHaveBeenCalledTimes(2)
+    } finally {
+      list.mockRestore()
       await s.close()
     }
   })

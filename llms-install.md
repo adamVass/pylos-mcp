@@ -1,6 +1,6 @@
 # Installing pylos-mcp
 
-These are instructions for an AI agent setting up pylos-mcp for a user. pylos-mcp is a local stdio MCP server, run with `npx -y pylos-mcp`, that reads, searches and drafts the user's email over IMAP. It needs Node.js 20 or later and nothing else.
+These are instructions for an AI agent setting up pylos-mcp for a user. pylos-mcp is a local stdio MCP server, run with `npx -y pylos-mcp`, that reads, searches and drafts the user's email over IMAP. It needs Node.js 22 or later and nothing else.
 
 ## 1. Ask the user
 

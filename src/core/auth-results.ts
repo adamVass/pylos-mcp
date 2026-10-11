@@ -3,19 +3,29 @@ import { headerValues } from './headers.js'
 // Comments and quoted strings hold sender-chosen text such as the envelope
 // address, which may contain `;`, `=` and escaped parentheses, so both go before
 // anything is split. Anything left unclosed swallows the rest, which can only hide a result.
+// The authserv-id alone may itself be quoted (RFC 8601 §2.2), so its text is kept, minus any `;`.
 function withoutCommentsOrQuotes(value: string): string {
   let depth = 0
   let quoted = false
   let escaped = false
+  let inId = true
   let out = ''
   for (const ch of value) {
-    if (escaped) escaped = false
-    else if ((quoted || depth > 0) && ch === '\\') escaped = true
-    else if (quoted) quoted = ch !== '"'
-    else if (ch === '(') depth += 1
+    const keep = quoted && inId && ch !== ';'
+    if (escaped) {
+      escaped = false
+      if (keep) out += ch
+    } else if ((quoted || depth > 0) && ch === '\\') escaped = true
+    else if (quoted) {
+      quoted = ch !== '"'
+      if (quoted && keep) out += ch
+    } else if (ch === '(') depth += 1
     else if (depth > 0) depth -= ch === ')' ? 1 : 0
     else if (ch === '"') quoted = true
-    else out += ch
+    else {
+      if (ch === ';') inId = false
+      out += ch
+    }
   }
   return out
 }

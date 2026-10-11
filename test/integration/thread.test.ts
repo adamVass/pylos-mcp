@@ -101,6 +101,11 @@ describe('getThread against a local Dovecot container', () => {
     },
   )
 
+  itIntegration('a folder with more matches than it fetches makes the count a lower bound', async () => {
+    expect((await getThread(session, FOLDER, uids.root, [OTHER])).capped).toBe(false)
+    expect((await getThread(session, FOLDER, uids.root, [OTHER], 50, 2)).capped).toBe(true)
+  })
+
   itIntegration('a message without a Message-ID is a thread of one', async () => {
     const { items, omitted } = await getThread(session, FOLDER, uids['no id'], [OTHER])
     expect(subjects(items)).toEqual(['no id'])

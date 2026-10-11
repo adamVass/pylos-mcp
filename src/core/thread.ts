@@ -17,6 +17,8 @@ export interface Thread {
   items: RenderableSummary[]
   /** older members left out by the limit */
   omitted: number
+  /** a folder had more matches than were fetched, so the total is a lower bound */
+  capped: boolean
 }
 
 interface Member {
@@ -30,23 +32,26 @@ export async function getThread(
   uid: number,
   otherFolders: readonly string[],
   limit = MAX_THREAD_MESSAGES,
+  maxMatches = MAX_MATCHES_PER_FOLDER,
 ): Promise<Thread> {
   const seed = await session.withMailbox(folder, (client) =>
     client.fetchOne(String(uid), { ...SUMMARY_QUERY, bodyParts: [HEADER_PART] }, { uid: true }),
   )
   if (!seed) throw new ToolError('not_found', SEED_GONE)
   const chain = idChain(seed)
-  if (chain.length === 0) return { items: [toSummary(folder, seed)], omitted: 0 }
+  if (chain.length === 0) return { items: [toSummary(folder, seed)], omitted: 0, capped: false }
 
   // the seed and then the asked folder go first, so theirs is the copy kept, and a
   // search the server rejects (imapflow answers `false`) still leaves the seed listed
   const members: Member[] = [{ summary: toSummary(folder, seed), messageId: seed.envelope?.messageId || undefined }]
+  let capped = false
   for (const each of [folder, ...otherFolders.filter((other) => other !== folder)]) {
-    const found = await membersIn(session, each, chain).catch((err: unknown) => {
-      if (each !== folder && err instanceof ToolError && err.code === 'not_found') return []
+    const found = await membersIn(session, each, chain, maxMatches).catch((err: unknown) => {
+      if (each !== folder && err instanceof ToolError && err.code === 'not_found') return { members: [], capped: false }
       throw err
     })
-    members.push(...found)
+    members.push(...found.members)
+    capped ||= found.capped
   }
 
   const seen = new Set<string>()
@@ -58,7 +63,7 @@ export async function getThread(
   })
   const ordered = unique.map((member) => member.summary).sort((a, b) => timeOf(a.date) - timeOf(b.date))
   const omitted = Math.max(0, ordered.length - limit)
-  return { items: ordered.slice(omitted), omitted }
+  return { items: ordered.slice(omitted), omitted, capped }
 }
 
 /** the seed's ancestors and its own id, validated as for a reply, or none when it has no usable Message-ID */
@@ -70,16 +75,22 @@ function idChain(seed: FetchMessageObject): string[] {
   }
 }
 
-async function membersIn(session: ImapSession, folder: string, chain: string[]): Promise<Member[]> {
+async function membersIn(
+  session: ImapSession,
+  folder: string,
+  chain: string[],
+  maxMatches: number,
+): Promise<{ members: Member[]; capped: boolean }> {
   return session.withMailbox(folder, async (client) => {
     const uids = (await client.search({ or: criteria(chain) }, { uid: true })) || []
-    const newest = [...uids].sort((a, b) => b - a).slice(0, MAX_MATCHES_PER_FOLDER)
-    if (newest.length === 0) return []
+    const newest = [...uids].sort((a, b) => b - a).slice(0, maxMatches)
     const members: Member[] = []
-    for await (const message of client.fetch(newest.join(','), SUMMARY_QUERY, { uid: true })) {
-      members.push({ summary: toSummary(folder, message), messageId: message.envelope?.messageId || undefined })
+    if (newest.length > 0) {
+      for await (const message of client.fetch(newest.join(','), SUMMARY_QUERY, { uid: true })) {
+        members.push({ summary: toSummary(folder, message), messageId: message.envelope?.messageId || undefined })
+      }
     }
-    return members
+    return { members, capped: uids.length > newest.length }
   })
 }
 

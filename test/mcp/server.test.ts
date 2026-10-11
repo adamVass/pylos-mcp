@@ -67,7 +67,7 @@ function fakeCore(calls: Calls): CoreApi {
     },
     async getThread(folder, uid) {
       calls.getThread = [folder, uid]
-      return { items: [summary()], omitted: 0 }
+      return { items: [summary()], omitted: 0, capped: false }
     },
     async getAttachment(folder, uid, partId) {
       calls.getAttachment = [folder, uid, partId]

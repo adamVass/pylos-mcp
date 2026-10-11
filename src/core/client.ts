@@ -54,9 +54,10 @@ export class ImapSession {
   }
 
   async specialUse(flag: SpecialUseFlag, fallback: string): Promise<string> {
-    const known = this.foundFolders.get(flag)
-    if (known !== undefined) return known
+    // acquired first, since a reconnect forgets what the lost connection found
     return this.withClient(async (client) => {
+      const known = this.foundFolders.get(flag)
+      if (known !== undefined) return known
       const folders = await client.list()
       const found = folders.find((folder) => folder.specialUse === flag)?.path
       // Trash decides what the delete tier may touch, so it is always looked up afresh

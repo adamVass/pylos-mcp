@@ -286,11 +286,12 @@ export function renderSearchResults(total: number, offset: number, items: Render
   ].join('\n')
 }
 
-export function renderThread(thread: { items: RenderableSummary[]; omitted: number }): string {
-  const { items, omitted } = thread
+export function renderThread(thread: { items: RenderableSummary[]; omitted: number; capped: boolean }): string {
+  const { items, omitted, capped } = thread
   const shown = omitted > 0 ? `, showing the newest ${items.length}` : ''
+  const total = `${capped ? 'at least ' : ''}${items.length + omitted}`
   return [
-    `Thread of ${items.length + omitted} message(s)${shown}, oldest first. Read each with get_email:`,
+    `Thread of ${total} message(s)${shown}, oldest first. Read each with get_email:`,
     ...fence(items.map(summaryLine)),
   ].join('\n')
 }

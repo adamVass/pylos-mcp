@@ -661,12 +661,15 @@ it('a thread says how many it holds and how many older ones it left out', () => 
     seen: true,
     flagged: false,
   }
-  const out = renderThread({ items: [row], omitted: 2 })
+  const out = renderThread({ items: [row], omitted: 2, capped: false })
   expect(out.split('\n')[0]).toBe(
     'Thread of 3 message(s), showing the newest 1, oldest first. Read each with get_email:',
   )
   expect(out).toContain('INBOX uid 3 | 2026-10-01 | Alice <alice@x.example> | Re: plans | 2.0 kB | read')
-  expect(renderThread({ items: [row], omitted: 0 }).split('\n')[0]).toBe(
+  expect(renderThread({ items: [row], omitted: 0, capped: false }).split('\n')[0]).toBe(
     'Thread of 1 message(s), oldest first. Read each with get_email:',
+  )
+  expect(renderThread({ items: [row], omitted: 2, capped: true }).split('\n')[0]).toBe(
+    'Thread of at least 3 message(s), showing the newest 1, oldest first. Read each with get_email:',
   )
 })
