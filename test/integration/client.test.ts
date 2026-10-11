@@ -88,6 +88,32 @@ describe('ImapSession against a local Dovecot container', () => {
     }
   })
 
+  itIntegration('connects with STARTTLS on the plaintext port, verifying the certificate', async () => {
+    const s = new ImapSession(
+      testConfig({ IMAP_STARTTLS: 'true', IMAP_PORT: process.env.PYLOS_IMAP_STARTTLS_PORT ?? '10143' }),
+    )
+    try {
+      const folders = await s.withClient(async (c) => c.list())
+      expect(folders.map((f) => f.path)).toContain('INBOX')
+    } finally {
+      await s.close()
+    }
+  })
+
+  itIntegration('an untrusted certificate after STARTTLS is rejected too', async () => {
+    const s = new ImapSession(
+      testConfig({
+        IMAP_STARTTLS: 'true',
+        IMAP_PORT: process.env.PYLOS_IMAP_STARTTLS_PORT ?? '10143',
+        TLS_CA_FILE: undefined,
+      }),
+    )
+    const err = await s.withClient(async () => undefined).catch((e) => e)
+    await s.close()
+    expect(err).toBeInstanceOf(ToolError)
+    expect((err as ToolError).message).toContain('TLS certificate')
+  })
+
   itIntegration('finds special-use Drafts and Trash', async () => {
     const s = new ImapSession(testConfig())
     try {

@@ -2,6 +2,12 @@
 
 Notable changes to pylos-mcp. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `IMAP_STARTTLS=true` connects to servers that offer IMAP only through STARTTLS, such as Proton Bridge in its default mode. The switch to TLS has to succeed before the login is sent, and a server that does not offer it is refused.
+
 ## [0.6.0] - 2026-10-11
 
 ### Added

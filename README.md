@@ -31,7 +31,7 @@ Anyone in the world can put text in your inbox, and the moment an AI assistant r
 
 In Claude Desktop, the quickest route is the bundle. Download [pylos-mcp.mcpb](https://github.com/adamVass/pylos-mcp/releases/latest/download/pylos-mcp.mcpb), open it, and fill in the form Desktop shows.
 
-The bundle's form covers the common settings. Ports, `TLS_CA_FILE`, `EMAIL_PASSWORD_CMD`, `MS_CLIENT_ID` and `MS_TENANT` are set only in the config file below.
+The bundle's form covers the common settings. Ports, `IMAP_STARTTLS`, `TLS_CA_FILE`, `EMAIL_PASSWORD_CMD`, `MS_CLIENT_ID` and `MS_TENANT` are set only in the config file below.
 
 If the extension shows "Server disconnected", the reason is not in its own log. Desktop writes it to `main.log` in `~/Library/Logs/Claude` on macOS or `%APPDATA%\Claude\logs` on Windows, on a line starting with `pylos-mcp:`.
 
@@ -107,7 +107,7 @@ https://login.microsoftonline.com/organizations/v2.0/adminconsent?client_id=45dd
 
 Sending from a work account also needs SMTP AUTH allowed for the mailbox, which many organizations turn off. An administrator turns it on per mailbox in the Exchange admin center. Organizations that would rather use an app registered in their own tenant set `MS_CLIENT_ID` to its application ID and `MS_TENANT` to their tenant ID.
 
-Proton Mail goes through Bridge. Leave `PROVIDER` unset and set `IMAP_HOST` and `IMAP_PORT` to what Bridge shows. The username is the address Bridge tells you to use, and the password is the one in Bridge's Mailbox details, IMAP section, not your Proton account password. Bridge defaults to STARTTLS while this server only speaks implicit TLS, so switch Bridge to SSL in its Advanced Settings. Bridge's certificate is self-signed, so export it and point `TLS_CA_FILE` at it.
+Proton Mail goes through Bridge. Leave `PROVIDER` unset and set `IMAP_HOST` and `IMAP_PORT` to what Bridge shows. The username is the address Bridge tells you to use, and the password is the one in Bridge's Mailbox details, IMAP section, not your Proton account password. Bridge defaults to STARTTLS, so also set `IMAP_STARTTLS=true`. Bridge's certificate is self-signed, so export it and point `TLS_CA_FILE` at it.
 
 Self-hosted servers also leave `PROVIDER` unset. Set `IMAP_HOST`, plus `SMTP_HOST` or `SIEVE_HOST` when those optional tiers are enabled, and authenticate however your server requires. For a private CA, point `TLS_CA_FILE` at the CA certificate. Verification itself always stays on, this only adds a trust anchor.
 
@@ -143,6 +143,7 @@ All configuration is environment variables, validated at startup. Invalid config
 | `MS_CLIENT_ID` | pylos-mcp's own | With `outlook` only. The application ID of an app registered in your organization's tenant. |
 | `MS_TENANT` | `common` | With `outlook` only. Your tenant ID or domain, needed when `MS_CLIENT_ID` names a single-tenant app. |
 | `IMAP_HOST` / `IMAP_PORT` | preset / `993` | Explicit values for self-hosted servers. Set either to override the preset. |
+| `IMAP_STARTTLS` | `false` | Connect in plain text and switch to TLS with STARTTLS before logging in, for servers that offer IMAP only that way. The default port becomes `143`. A server that will not switch is refused, and nothing is ever sent unencrypted. |
 | `SMTP_HOST` / `SMTP_PORT` | preset / `465`, `587` for `outlook` | Required only when `send` is enabled. |
 | `SIEVE_HOST` / `SIEVE_PORT` | `IMAP_HOST` / `4190` | Used only when `sieve-read` is enabled. |
 | `CAPABILITIES` | `drafts` | Comma-separated list of tiers beyond `read`, which is always included. |

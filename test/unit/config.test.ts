@@ -6,7 +6,7 @@ const BASE = { EMAIL_USER: 'a@mailbox.org', EMAIL_PASSWORD: 'pw', PROVIDER: 'mai
 describe('loadConfig', () => {
   it('fills IMAP host/port from provider preset', () => {
     const c = loadConfig(BASE)
-    expect(c.imap).toEqual({ host: 'imap.mailbox.org', port: 993 })
+    expect(c.imap).toEqual({ host: 'imap.mailbox.org', port: 993, starttls: false })
   })
   it('password presets send on 465', () => {
     expect(loadConfig({ ...BASE, CAPABILITIES: 'send' }).smtp).toEqual({ host: 'smtp.mailbox.org', port: 465 })
@@ -35,7 +35,16 @@ describe('loadConfig', () => {
   })
   it('explicit IMAP_HOST/IMAP_PORT override the preset', () => {
     const c = loadConfig({ ...BASE, IMAP_HOST: 'other.example', IMAP_PORT: '1993' })
-    expect(c.imap).toEqual({ host: 'other.example', port: 1993 })
+    expect(c.imap).toEqual({ host: 'other.example', port: 1993, starttls: false })
+  })
+  it('IMAP_STARTTLS starts on 143 unless IMAP_PORT says otherwise, and takes only true or false', () => {
+    expect(loadConfig({ ...BASE, IMAP_STARTTLS: 'true' }).imap).toEqual({
+      host: 'imap.mailbox.org',
+      port: 143,
+      starttls: true,
+    })
+    expect(loadConfig({ ...BASE, IMAP_STARTTLS: 'true', IMAP_PORT: '1143' }).imap.port).toBe(1143)
+    expect(() => loadConfig({ ...BASE, IMAP_STARTTLS: 'yes' })).toThrow(ConfigError)
   })
   it('requires a host from either PROVIDER or IMAP_HOST', () => {
     expect(() => loadConfig({ EMAIL_USER: 'a@x.example', EMAIL_PASSWORD: 'pw' })).toThrow(ConfigError)
@@ -137,7 +146,7 @@ describe('PROVIDER=outlook', () => {
 
   it('signs in through Microsoft on the Outlook hosts, asking for send rights only with send', () => {
     const read = loadConfig(OUTLOOK)
-    expect(read.imap).toEqual({ host: 'outlook.office365.com', port: 993 })
+    expect(read.imap).toEqual({ host: 'outlook.office365.com', port: 993, starttls: false })
     expect(read.password).toBeUndefined()
     expect(read.microsoft).toEqual({
       clientId: MICROSOFT_CLIENT_ID,

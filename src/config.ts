@@ -13,7 +13,7 @@ export interface Config {
   user: string
   password?: string // present iff microsoft is absent
   microsoft?: MicrosoftAuthConfig // present iff the preset signs in through Microsoft
-  imap: { host: string; port: number }
+  imap: { host: string; port: number; starttls: boolean }
   smtp?: { host: string; port: number } // present iff 'send' enabled
   sieve?: { host: string; port: number } // present iff 'sieve-read' enabled
   capabilities: Set<Capability> // always contains 'read'
@@ -37,7 +37,7 @@ interface Preset {
   auth: 'password' | 'microsoft'
 }
 
-// all IMAP ports are 993
+// every preset speaks implicit TLS on 993
 const PRESETS: ReadonlyMap<string, Preset> = new Map([
   ['mailbox.org', { imapHost: 'imap.mailbox.org', smtpHost: 'smtp.mailbox.org', smtpPort: 465, auth: 'password' }],
   ['fastmail', { imapHost: 'imap.fastmail.com', smtpHost: 'smtp.fastmail.com', smtpPort: 465, auth: 'password' }],
@@ -220,7 +220,8 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
   if (!imapHost) {
     throw new ConfigError('IMAP host is not configured. Set IMAP_HOST or PROVIDER')
   }
-  const imap = { host: imapHost, port: numericEnv('IMAP_PORT', env.IMAP_PORT, 993) }
+  const starttls = booleanEnv('IMAP_STARTTLS', env.IMAP_STARTTLS, false)
+  const imap = { host: imapHost, port: numericEnv('IMAP_PORT', env.IMAP_PORT, starttls ? 143 : 993), starttls }
 
   let smtp: { host: string; port: number } | undefined
   if (capabilities.has('send')) {

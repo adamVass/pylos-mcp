@@ -12,6 +12,7 @@ CONTAINER_NAME="${PYLOS_DOVECOT_CONTAINER:-pylos-test-dovecot}"
 # is unusable on Apple Silicon. 2.4.x is multi-arch.
 IMAGE="${PYLOS_DOVECOT_IMAGE:-dovecot/dovecot:2.4.4}"
 IMAP_PORT="${PYLOS_IMAP_PORT:-10993}"
+IMAP_STARTTLS_PORT="${PYLOS_IMAP_STARTTLS_PORT:-10143}"
 SIEVE_PORT="${PYLOS_SIEVE_PORT:-14190}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,11 +30,12 @@ cleanup
 bash "$SCRIPT_DIR/docker/gen-certs.sh"
 
 # The container image is the official rootless build: it runs as "vmail" and
-# listens on high ports (31993 imaps, 34190 managesieve), which are published
-# on the loopback interface only.
+# listens on high ports (31993 imaps, 31143 imap with STARTTLS, 34190
+# managesieve), which are published on the loopback interface only.
 docker run -d --name "$CONTAINER_NAME" \
   -e USER_PASSWORD=testpass \
   -p "127.0.0.1:$IMAP_PORT:31993" \
+  -p "127.0.0.1:$IMAP_STARTTLS_PORT:31143" \
   -p "127.0.0.1:$SIEVE_PORT:34190" \
   -v "$SCRIPT_DIR/docker/dovecot.conf:/etc/dovecot/conf.d/zz-pylos.conf:ro" \
   -v "$SCRIPT_DIR/docker/certs:/etc/dovecot/certs:ro" \
@@ -128,5 +130,6 @@ printf 'require "fileinto";\nif header :contains "subject" "spam" { fileinto "Tr
 echo "Seeded sieve scripts: filters (active), bulky"
 
 cd "$PROJECT_DIR"
-RUN_INTEGRATION=1 PYLOS_IMAP_PORT="$IMAP_PORT" PYLOS_SIEVE_PORT="$SIEVE_PORT" \
+RUN_INTEGRATION=1 PYLOS_IMAP_PORT="$IMAP_PORT" PYLOS_IMAP_STARTTLS_PORT="$IMAP_STARTTLS_PORT" \
+  PYLOS_SIEVE_PORT="$SIEVE_PORT" \
   npx vitest run test/integration

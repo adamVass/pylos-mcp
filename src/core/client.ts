@@ -16,7 +16,8 @@ const MICROSOFT_IMAP_REFUSED =
 
 /**
  * Owns the single IMAP connection for the process. TLS is always on and always
- * verified: no option, env var or code path relaxes it.
+ * verified, from the first byte or after a STARTTLS that must succeed before
+ * login: no option, env var or code path relaxes it.
  */
 export class ImapSession {
   private client?: ImapFlow
@@ -113,11 +114,13 @@ export class ImapSession {
   }
 
   private async buildOptions(): Promise<ImapFlowOptions> {
-    const { host, port } = this.cfg.imap
+    const { host, port, starttls } = this.cfg.imap
     return {
       host,
       port,
-      secure: true,
+      secure: !starttls,
+      // explicit both ways: left undefined, imapflow carries on in plaintext when STARTTLS is not offered
+      doSTARTTLS: starttls,
       servername: host,
       auth: this.tokens
         ? { user: this.cfg.user, accessToken: await this.tokens.accessToken() }
@@ -173,6 +176,12 @@ function connectionError(err: unknown, host: string, port: number): ToolError {
         `the TLS certificate presented by ${target} could not be verified. If this is a private server with its own CA, ${TLS_CA_ADVICE}`,
       )
     default:
+      if ((err as { tlsFailed?: unknown } | null)?.tlsFailed === true) {
+        return new ToolError(
+          'connect',
+          `${target} did not switch to TLS with STARTTLS, so no login was sent. Check IMAP_PORT, or unset IMAP_STARTTLS for a server that uses TLS from the first byte`,
+        )
+      }
       return new ToolError('connect', `could not establish an IMAP connection to ${target}`)
   }
 }
