@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { mkdir, open, unlink } from 'node:fs/promises'
 import { Transform, type Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
-import type { FetchMessageObject, ImapFlow, MessageStructureObject } from 'imapflow'
+import type { FetchMessageObject, FetchQueryObject, ImapFlow, MessageStructureObject } from 'imapflow'
 import type { Config } from '../config.js'
 import { formatAddress } from './address.js'
 import type { ImapSession } from './client.js'
@@ -22,7 +22,7 @@ import {
   type MessagePart,
 } from './parts.js'
 import { trustedDmarcFailed } from './auth-results.js'
-import { MAX_HEADER_BYTES } from './headers.js'
+import { HEADER_PART } from './headers.js'
 
 interface BodyText {
   text: string
@@ -46,7 +46,14 @@ export async function getEmail(
   authservIds: readonly string[] = [],
 ): Promise<RenderableEmail> {
   return session.withMailbox(folder, async (client) => {
-    const message = await fetchMessage(client, uid)
+    const message = await fetchMessage(client, uid, {
+      envelope: true,
+      bodyStructure: true,
+      size: true,
+      internalDate: true,
+      // the header block only matters when there is a receiving server's verdict to read in it
+      ...(authservIds.length > 0 && { bodyParts: [HEADER_PART] }),
+    })
     const parts = leafParts(message.bodyStructure)
     // the listing keys off this structural choice, as unknownPart does, so the two never disagree
     const structuralBody = chooseBodyPart(parts)
@@ -85,6 +92,10 @@ export async function getEmail(
   })
 }
 
+// imapflow fetches an attachment 64 kB per round trip by default, about 500 trips
+// for a 25 MB file. The size caps are enforced on the stream, not by this.
+export const DOWNLOAD_CHUNK_BYTES = 1_048_576
+
 export interface AttachmentResult {
   path: string
   sizeBytes: number
@@ -107,7 +118,7 @@ export async function getAttachment(
     await makeDownloadDir(cfg.downloadDir)
     const name = sanitizeFilename(downloadName(part.node))
 
-    const download = await client.download(String(uid), part.id, { uid: true })
+    const download = await client.download(String(uid), part.id, { uid: true, chunkSize: DOWNLOAD_CHUNK_BYTES })
     // a message expunged between the FETCH and this DOWNLOAD yields an object with
     // no stream rather than an error
     if (!download?.content) throw new ToolError('not_found', MESSAGE_GONE)
@@ -137,7 +148,7 @@ export async function resolvePartForDownload(
   partId: string,
   maxAttachmentMb: number,
 ): Promise<MessagePart> {
-  const message = await fetchMessage(client, uid)
+  const message = await fetchMessage(client, uid, { bodyStructure: true })
   const parts = leafParts(message.bodyStructure)
   const part = findPart(parts, partId)
   if (!part) throw unknownPart(parts)
@@ -197,19 +208,8 @@ function enforceDeclaredSizeCap(part: MessagePart, maxAttachmentMb: number): voi
   )
 }
 
-async function fetchMessage(client: ImapFlow, uid: number): Promise<FetchMessageObject> {
-  const message = await client.fetchOne(
-    String(uid),
-    {
-      envelope: true,
-      bodyStructure: true,
-      flags: true,
-      size: true,
-      internalDate: true,
-      bodyParts: [{ key: 'header', maxLength: MAX_HEADER_BYTES }],
-    },
-    { uid: true },
-  )
+async function fetchMessage(client: ImapFlow, uid: number, query: FetchQueryObject): Promise<FetchMessageObject> {
+  const message = await client.fetchOne(String(uid), query, { uid: true })
   if (!message) throw new ToolError('not_found', MESSAGE_GONE)
   return message
 }

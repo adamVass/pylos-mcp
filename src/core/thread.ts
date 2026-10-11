@@ -2,9 +2,9 @@ import type { FetchMessageObject, SearchObject } from 'imapflow'
 import { ToolError } from '../errors.js'
 import type { RenderableSummary } from '../safety/render.js'
 import type { ImapSession } from './client.js'
-import { MAX_HEADER_BYTES } from './headers.js'
+import { HEADER_PART } from './headers.js'
 import { threadHeaders } from './reply.js'
-import { toSummary } from './search.js'
+import { SUMMARY_QUERY, toSummary } from './search.js'
 
 export const MAX_THREAD_MESSAGES = 50
 // a sender can copy a thread's ids into any mail, so each folder's matches are capped before fetching
@@ -24,8 +24,6 @@ interface Member {
   messageId?: string
 }
 
-const SUMMARY_QUERY = { envelope: true, flags: true, size: true, internalDate: true } as const
-
 export async function getThread(
   session: ImapSession,
   folder: string,
@@ -34,11 +32,7 @@ export async function getThread(
   limit = MAX_THREAD_MESSAGES,
 ): Promise<Thread> {
   const seed = await session.withMailbox(folder, (client) =>
-    client.fetchOne(
-      String(uid),
-      { ...SUMMARY_QUERY, bodyParts: [{ key: 'header', maxLength: MAX_HEADER_BYTES }] },
-      { uid: true },
-    ),
+    client.fetchOne(String(uid), { ...SUMMARY_QUERY, bodyParts: [HEADER_PART] }, { uid: true }),
   )
   if (!seed) throw new ToolError('not_found', SEED_GONE)
   const chain = idChain(seed)
@@ -82,7 +76,6 @@ async function membersIn(session: ImapSession, folder: string, chain: string[]):
     const newest = [...uids].sort((a, b) => b - a).slice(0, MAX_MATCHES_PER_FOLDER)
     if (newest.length === 0) return []
     const members: Member[] = []
-    // metadata only, no BODY[] part, so nothing here marks a message \Seen
     for await (const message of client.fetch(newest.join(','), SUMMARY_QUERY, { uid: true })) {
       members.push({ summary: toSummary(folder, message), messageId: message.envelope?.messageId || undefined })
     }

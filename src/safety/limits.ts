@@ -15,9 +15,9 @@ export function truncateAtKb(s: string, kb: number, cutShort = false): string {
   if (Buffer.byteLength(s) <= limitBytes) return cutShort ? `${s}${marker}` : s
 
   const sliced = Buffer.from(s, 'utf8').subarray(0, limitBytes)
-  // a non-fatal decode replaces a trailing partial multi-byte char with U+FFFD
-  // rather than throwing, so those come off the tail
-  const decoded = new TextDecoder('utf-8').decode(sliced).replace(/�+$/, '')
+  // streaming holds back a multi-byte character the cut split, instead of
+  // decoding it to U+FFFD that would then have to be trimmed off
+  const decoded = new TextDecoder('utf-8').decode(sliced, { stream: true })
 
   return `${decoded}${marker}`
 }

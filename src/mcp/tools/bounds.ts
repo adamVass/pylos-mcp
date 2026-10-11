@@ -42,6 +42,12 @@ export const attachment = z.object({
   part_id: z.string().min(1),
 })
 
+export const attachments = z
+  .array(attachment)
+  .max(MAX_ATTACHMENTS)
+  .optional()
+  .describe('Attachments are taken from messages already in the mailbox, by folder, uid and part id.')
+
 // `.describe` returns fresh instances, so the SDK's identity dedup cannot turn
 // these into a $ref into `attachment` within the same tool schema
 export const replyRef = z.object({

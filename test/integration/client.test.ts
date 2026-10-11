@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import type { AddressInfo } from 'node:net'
 import { dirname, join } from 'node:path'
 import { createServer as createTlsServer } from 'node:tls'
-import { describe, expect } from 'vitest'
+import { describe, expect, vi } from 'vitest'
 import { ImapSession } from '../../src/core/client.js'
 import { ToolError } from '../../src/errors.js'
 import { testConfig, itIntegration, testCaFile } from './helpers.js'
@@ -133,6 +133,22 @@ describe('ImapSession against a local Dovecot container', () => {
       expect(folders.find((f) => f.specialUse === '\\Drafts')?.path).toBe('Drafts')
       expect(folders.find((f) => f.specialUse === '\\Trash')?.path).toBe('Trash')
       expect(await s.specialUse('\\Drafts', 'FALLBACK_NOT_USED')).toBe('Drafts')
+    } finally {
+      await s.close()
+    }
+  })
+
+  itIntegration('looks up Drafts and Sent once per connection, and Trash every time', async () => {
+    const s = new ImapSession(testConfig())
+    try {
+      const list = vi.spyOn(await s.withClient(async (c) => c), 'list')
+      await s.specialUse('\\Drafts', 'Drafts')
+      await s.specialUse('\\Drafts', 'Drafts')
+      expect(list).toHaveBeenCalledTimes(1)
+      // Trash decides what the delete tier may touch, so it is never served from memory
+      await s.specialUse('\\Trash', 'Trash')
+      await s.specialUse('\\Trash', 'Trash')
+      expect(list).toHaveBeenCalledTimes(3)
     } finally {
       await s.close()
     }

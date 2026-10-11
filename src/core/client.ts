@@ -23,6 +23,8 @@ export class ImapSession {
   private client?: ImapFlow
   /** in-flight connect, so concurrent callers share one connection instead of racing */
   private pending?: Promise<ImapFlow>
+  /** found per connection, since every draft, send and thread needs them */
+  private readonly foundFolders = new Map<SpecialUseFlag, string>()
 
   constructor(
     private readonly cfg: Config,
@@ -52,9 +54,14 @@ export class ImapSession {
   }
 
   async specialUse(flag: SpecialUseFlag, fallback: string): Promise<string> {
+    const known = this.foundFolders.get(flag)
+    if (known !== undefined) return known
     return this.withClient(async (client) => {
       const folders = await client.list()
-      return folders.find((folder) => folder.specialUse === flag)?.path ?? fallback
+      const found = folders.find((folder) => folder.specialUse === flag)?.path
+      // Trash decides what the delete tier may touch, so it is always looked up afresh
+      if (found !== undefined && flag !== '\\Trash') this.foundFolders.set(flag, found)
+      return found ?? fallback
     })
   }
 
@@ -109,6 +116,7 @@ export class ImapSession {
       throw connectionError(err, this.cfg.imap.host, this.cfg.imap.port)
     }
 
+    this.foundFolders.clear()
     this.client = client
     return client
   }

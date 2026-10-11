@@ -1,6 +1,6 @@
 import { ToolError } from '../errors.js'
 import type { ImapSession } from './client.js'
-import { MAX_HEADER_BYTES, headerValues, wasCut } from './headers.js'
+import { HEADER_PART, headerValues, wasCut } from './headers.js'
 
 export interface ReplyRef {
   folder: string
@@ -53,7 +53,7 @@ export function threadHeaders(headerBlock: Buffer): ReplyHeaders {
 export async function readReplyHeaders(session: ImapSession, ref: ReplyRef): Promise<ReplyHeaders> {
   // BODY.PEEK, so reading the original never marks it read
   const original = await session.withMailbox(ref.folder, (client) =>
-    client.fetchOne(String(ref.uid), { bodyParts: [{ key: 'header', maxLength: MAX_HEADER_BYTES }] }, { uid: true }),
+    client.fetchOne(String(ref.uid), { bodyParts: [HEADER_PART] }, { uid: true }),
   )
   if (!original) throw new ToolError('not_found', ORIGINAL_GONE)
 

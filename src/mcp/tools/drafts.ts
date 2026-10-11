@@ -7,9 +7,8 @@ import { renderDraftSaved } from '../../safety/render.js'
 import { run } from '../run.js'
 import {
   address,
-  attachment,
+  attachments,
   type AttachmentRef,
-  MAX_ATTACHMENTS,
   MAX_RECIPIENTS,
   REPLY_NOTE,
   type ReplyRefInput,
@@ -20,11 +19,7 @@ import {
 const base = {
   subject: z.string(),
   body: z.string(),
-  attachments: z
-    .array(attachment)
-    .max(MAX_ATTACHMENTS)
-    .optional()
-    .describe('Attachments are taken from messages already in the mailbox, by folder, uid and part id.'),
+  attachments,
   in_reply_to: replyRef.optional(),
 }
 

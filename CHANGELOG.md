@@ -9,14 +9,23 @@ Notable changes to pylos-mcp. The format follows [Keep a Changelog](https://keep
 - `get_thread` lists the conversation a message belongs to, from its own folder, INBOX and Sent, oldest first, each message once and at most 50.
 - `get_email` warns with `dmarc_fail` when your own mail server's DMARC check on the message failed. Only the header your provider wrote counts, recognized by its server name, which the presets know for Gmail, Outlook, mailbox.org, GMX, Posteo and Fastmail. `AUTHSERV_ID` sets it elsewhere, and `FLAG_DMARC_FAIL=false` turns the warning off.
 - `IMAP_STARTTLS=true` connects to servers that offer IMAP only through STARTTLS, such as Proton Bridge in its default mode. The switch to TLS has to succeed before the login is sent, and a server that does not offer it is refused.
+- Each release's Claude Desktop bundle comes with a signed build attestation, `pylos-mcp.mcpb.sigstore.json`, which `gh attestation verify` checks.
 - `llms-install.md` walks an AI agent such as Cline through setting the server up.
 - The server reports its description, website and icon to clients, and the MCP registry entry carries the icon too, so directories can show the logo.
 
 ### Changed
 
+- Requires Node.js 22 or later, since Node 20 has reached its end of life. SECURITY.md now says which Node versions are supported and what stays stable within 1.x.
 - The README starts with install buttons and per client setup, compares the approach with gaps email servers can have, and answers common questions.
 - One description everywhere: "Email MCP server for Gmail, Outlook and any IMAP mailbox, hardened against prompt injection".
 - The Claude Desktop form mentions that `*` lets sending reach anyone.
+- Attachments download in 1 MB pieces instead of 64 kB, so a 25 MB file takes about 32 round trips to the server rather than about 500.
+- `get_email` fetches the message headers only when there is a receiving server's verdict to read in them, and attachment downloads fetch only the message structure.
+- The Sent and Drafts folders are looked up once per connection instead of on every draft, send and thread.
+
+### Security
+
+- Three checks on text a sender controls took time growing with the square of its length: a From display name, an inline style value and a body full of invalid bytes. One crafted message could stall the server for several seconds per call. All three now run in linear time.
 
 ## [0.6.0] - 2026-10-11
 

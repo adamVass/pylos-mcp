@@ -49,11 +49,9 @@ function hiddenBy(el: Element): Mechanism | null {
   for (const decl of style.toLowerCase().split(';')) {
     const colon = decl.indexOf(':')
     if (colon === -1) continue
-    const value = decl
-      .slice(colon + 1)
-      .trim()
-      .replace(/\s*!important$/i, '')
-    decls.set(decl.slice(0, colon).trim(), value)
+    // endsWith, not /\s*!important$/: that regex is quadratic on a value full of whitespace
+    const value = decl.slice(colon + 1).trim()
+    decls.set(decl.slice(0, colon).trim(), value.endsWith('!important') ? value.slice(0, -10).trimEnd() : value)
   }
 
   if (decls.get('display') === 'none') return 'display:none'
@@ -265,7 +263,9 @@ function foreignTo(domain: string, from: string): boolean {
 
 // Address-shaped only: a bare domain-shaped token would flag names like
 // "Node.js Weekly".
-const ADDRESS_IN_NAME = /[^\s@<>]+@[^\s@<>]+/g
+// The lookbehind starts a match only at a token boundary, which keeps a long
+// run without an @ linear instead of rescanning it from every position.
+const ADDRESS_IN_NAME = /(?<![^\s@<>])[^\s@<>]+@[^\s@<>]+/g
 
 /**
  * The Sender header is deliberately not consulted, because it diverges from

@@ -4,7 +4,7 @@ import type { Config } from '../config.js'
 import type { ImapSession } from './client.js'
 import { ToolError } from '../errors.js'
 import { readReplyHeaders, type ReplyRef } from './reply.js'
-import { capBytes, capExceededMidTransfer, resolvePartForDownload } from './message.js'
+import { DOWNLOAD_CHUNK_BYTES, capBytes, capExceededMidTransfer, resolvePartForDownload } from './message.js'
 import { downloadName } from './parts.js'
 
 export interface PartRef {
@@ -192,7 +192,7 @@ async function fetchPart(session: ImapSession, cfg: Config, ref: PartRef, claim:
     const declared = part.node.size ?? 0
     claim.take(declared)
 
-    const download = await client.download(String(ref.uid), part.id, { uid: true })
+    const download = await client.download(String(ref.uid), part.id, { uid: true, chunkSize: DOWNLOAD_CHUNK_BYTES })
     // a message expunged between the FETCH and this DOWNLOAD yields an object with
     // no stream rather than an error
     if (!download?.content) throw new ToolError('not_found', SOURCE_GONE)

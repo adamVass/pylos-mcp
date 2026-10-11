@@ -28,6 +28,11 @@ export function checkAllowlist(recipients: string[], allowlist: string[]): strin
   return recipients.filter((recipient) => !isAllowed(recipient.toLowerCase(), allowlist))
 }
 
+/** the shapes isAllowed can match, checked at startup so no entry silently matches nobody */
+export function isAllowlistEntry(entry: string): boolean {
+  return entry === '*' || /^(\*|[^\s*]+)@[^\s@*]+$/.test(entry)
+}
+
 /**
  * `*` alone is the config token that visibly turns the safeguard off.
  * `*@domain` compares the part after the LAST `@` for exact equality, not a
@@ -35,11 +40,6 @@ export function checkAllowlist(recipients: string[], allowlist: string[]): strin
  * part may legally contain an `@`, so `"a@corp.example"@evil.example` is an
  * evil.example address.
  */
-/** the shapes isAllowed can match, checked at startup so no entry silently matches nobody */
-export function isAllowlistEntry(entry: string): boolean {
-  return entry === '*' || /^(\*|[^\s*]+)@[^\s@*]+$/.test(entry)
-}
-
 function isAllowed(recipient: string, allowlist: string[]): boolean {
   const at = recipient.lastIndexOf('@')
   const domain = at === -1 ? null : recipient.slice(at + 1)

@@ -363,3 +363,25 @@ describe('mixed script', () => {
     expect(mixed('P\u0430ypal', { ...ALL_ON, mixedScript: false })).toBeUndefined()
   })
 })
+
+// sender-controlled strings that once took seconds each, blocking every other tool call
+describe('hostile input stays linear', () => {
+  const quick = (run: () => unknown) => {
+    const started = performance.now()
+    run()
+    return performance.now() - started
+  }
+
+  it('a display name of 64k characters without an @', () => {
+    const fields = { fromName: 'x'.repeat(65_536), fromAddress: 'a@x.example', replyTo: [] }
+    expect(quick(() => detectSender(fields, ALL_ON))).toBeLessThan(200)
+    expect(detectSender({ ...fields, fromName: 'Bank <help@evil.example>' }, ALL_ON)?.note).toBe(
+      'display name carries an address on another domain',
+    )
+  })
+
+  it('a style value with 64k spaces inside it', () => {
+    const html = `<p style="color:a${' '.repeat(65_536)}b">text</p>`
+    expect(quick(() => inspectHtml(html, ALL_ON))).toBeLessThan(200)
+  })
+})

@@ -55,14 +55,12 @@ function criteria(args: SearchArgs): SearchObject {
   return search
 }
 
+/** metadata only, no BODY[] part, so fetching it never marks a message \\Seen */
+export const SUMMARY_QUERY = { envelope: true, flags: true, size: true, internalDate: true } as const
+
 async function summarize(client: ImapFlow, folder: string, uids: number[]): Promise<RenderableSummary[]> {
   const byUid = new Map<number, FetchMessageObject>()
-  // metadata only, no BODY[] part, so nothing here marks a message \Seen
-  for await (const message of client.fetch(
-    uids.join(','),
-    { envelope: true, flags: true, size: true, internalDate: true },
-    { uid: true },
-  )) {
+  for await (const message of client.fetch(uids.join(','), SUMMARY_QUERY, { uid: true })) {
     byUid.set(message.uid, message)
   }
 

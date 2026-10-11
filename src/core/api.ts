@@ -35,7 +35,8 @@ export function makeCoreApi(cfg: Config, session: ImapSession): CoreApi {
 
   return {
     searchEmails: (args) => searchEmails(session, args),
-    getEmail: (folder, uid) => getEmail(session, folder, uid, cfg.maxBodyKb, cfg.authservIds),
+    getEmail: (folder, uid) =>
+      getEmail(session, folder, uid, cfg.maxBodyKb, cfg.detect.dmarcFail ? cfg.authservIds : []),
     // a sent reply lives in Sent, and the other side of the conversation usually in INBOX
     getThread: async (folder, uid) =>
       getThread(session, folder, uid, ['INBOX', await session.specialUse('\\Sent', 'Sent')]),

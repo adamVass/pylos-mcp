@@ -4,7 +4,7 @@ import type { Config } from '../../config.js'
 import type { CoreApi } from '../../core/api.js'
 import { renderSent } from '../../safety/render.js'
 import { run } from '../run.js'
-import { address, attachment, MAX_ATTACHMENTS, MAX_RECIPIENTS, REPLY_NOTE, replyRef, toPartRefs } from './bounds.js'
+import { address, attachments, MAX_RECIPIENTS, REPLY_NOTE, replyRef, toPartRefs } from './bounds.js'
 
 export function sendPolicyClause(allowlist: string[] | undefined): string {
   if (allowlist === undefined) {
@@ -30,11 +30,7 @@ export function registerSendTools(server: McpServer, cfg: Config, core: CoreApi)
         cc: z.array(address()).max(MAX_RECIPIENTS).optional(),
         subject: z.string(),
         body: z.string(),
-        attachments: z
-          .array(attachment)
-          .max(MAX_ATTACHMENTS)
-          .optional()
-          .describe('Attachments are taken from messages already in the mailbox, by folder, uid and part id.'),
+        attachments,
         in_reply_to: replyRef.optional(),
       },
       // the only tool whose effect cannot be undone from a mail client, so it
