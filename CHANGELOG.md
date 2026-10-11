@@ -2,6 +2,17 @@
 
 Notable changes to pylos-mcp. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-10-11
+
+### Added
+
+- Outlook.com and Microsoft 365 accounts work with `PROVIDER=outlook`. The first tool call opens Microsoft's sign-in in the browser, and the sign-in is kept and renewed without asking again. `MS_CLIENT_ID` and `MS_TENANT` point it at an app registered in an organization's own tenant.
+- Each release carries `pylos-mcp.mcpb`, a Claude Desktop bundle that installs the server in one click.
+
+### Changed
+
+- Provider presets carry their own SMTP port. `outlook` sends over STARTTLS on port 587, and every other preset stays on 465.
+
 ## [0.5.0] - 2026-10-10
 
 ### Added
@@ -119,6 +130,7 @@ A configuration that loaded on 0.2.0 can now fail at startup, if `SEND_ALLOWLIST
 - Warnings for hidden text, instruction-like phrases and long encoded runs.
 - Provider presets for Gmail, iCloud, Yahoo, GMX, Fastmail, mailbox.org and Posteo.
 
+[0.6.0]: https://github.com/adamVass/pylos-mcp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/adamVass/pylos-mcp/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/adamVass/pylos-mcp/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/adamVass/pylos-mcp/compare/v0.3.0...v0.4.0
