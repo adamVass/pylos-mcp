@@ -28,13 +28,13 @@ jobs:
       # v0.2.0 at a tree whose package.json still says 0.1.0 publishes 0.1.0
       # (or fails on an already-published version) under a tag claiming
       # otherwise, and the npm version cannot be corrected afterwards.
-      # manifest.json is checked too, since the bundle would otherwise install
-      # under a stale version.
+      # manifest.json and server.json are checked too, since the bundle and the
+      # registry listing would otherwise carry a stale version.
       - name: Check the tag matches the package version
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
-          for file in package.json manifest.json; do
+          for file in package.json manifest.json server.json; do
             version="v$(node -p "require('./$file').version")"
             if [ "$tag" != "$version" ]; then
               echo "tag $tag does not match $file version $version" >&2
@@ -57,6 +57,35 @@ jobs:
       # No explicit build step: prepublishOnly runs `npm run build` for us, so
       # the published dist is always compiled from the commit being published.
       - run: npm publish
+
+  # Signs in to the MCP registry with this run's OIDC identity, which the
+  # registry maps to the io.github.adamVass namespace, so no login or token is
+  # kept anywhere. Nothing is installed but the checksummed publisher binary.
+  registry:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install mcp-publisher 1.8.1
+        run: |
+          set -euo pipefail
+          curl -fsSL -o mcp-publisher.tar.gz https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz
+          echo "a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc  mcp-publisher.tar.gz" | sha256sum -c -
+          tar xzf mcp-publisher.tar.gz mcp-publisher
+      - run: ./mcp-publisher login github-oidc
+      # the registry checks mcpName against npm, which can lag the publish briefly
+      - name: Publish server.json
+        run: |
+          for attempt in 1 2 3; do
+            ./mcp-publisher publish && exit 0
+            sleep 30
+          done
+          exit 1
 
   # Built without write access: npm ci runs dev-dependency install scripts, and
   # anything they leave behind (a planted `gh` on PATH, say) would otherwise run
