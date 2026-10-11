@@ -40,8 +40,11 @@
   "files": [
     "dist"
   ],
+  "overrides": {
+    "tmp": "^0.2.6"
+  },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "build": "tsc",

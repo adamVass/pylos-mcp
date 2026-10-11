@@ -2,15 +2,41 @@
 
 ## Supported versions
 
-pylos-mcp is pre-1.0. Only the latest published release receives security
-fixes. There is no support commitment for older versions. Once the project
-reaches 1.0, this section will define a longer support window.
+Security fixes go to the latest release. Once a 2.0 ships, the last 1.x
+release keeps receiving security fixes for six months.
+
+pylos-mcp supports the Node.js versions that are still maintained, 22 and
+later today. Dropping a version that has reached its end of life happens in a
+minor release and is announced in the changelog.
+
+## What stays stable
+
+pylos-mcp follows semantic versioning. Within 1.x, these change only in a
+major release:
+
+- tool names, their parameters and what each tool does
+- environment variable names, the values they accept and their defaults
+- the capability tiers, which tools each one holds, and that only reading and
+  drafting are on by default
+- the guarantees listed in the README under "What this can never do"
+
+New tools, parameters, settings, providers and warnings arrive in minor
+releases. A new tool that changes or sends mail joins a tier that is off by
+default.
+
+Not covered, and free to change in any release: the wording and layout of tool
+results, warning notes and error messages, which are written for the model and
+not for parsing, the messages a detector flags, as detectors get better, and a
+preset's server addresses when the provider changes them.
 
 ## Reporting a vulnerability
 
 Report vulnerabilities privately through this repository's GitHub Security
-Advisories (the "Security" tab, then "Report a vulnerability"), not as a
-public issue. That keeps details out of public view until a fix is available.
+Advisories, at https://github.com/adamVass/pylos-mcp/security/advisories/new,
+not as a public issue. That keeps details out of public view until a fix is
+available. Expect a first answer within a week. A confirmed vulnerability is
+fixed in a new release and then disclosed in a published advisory, with a CVE
+where one applies.
 
 Include the affected version, the IMAP/SMTP/Sieve provider or server software
 involved if relevant, and steps to reproduce. If reproduction depends on a
@@ -55,6 +81,12 @@ own random state. Deleting the file and restarting the client signs out.
 Microsoft's account pages revoke the app's access from the next renewal on,
 account.microsoft.com for personal accounts and myapps.microsoft.com for work
 accounts.
+
+The npm package is published with npm provenance, and each GitHub release's
+Claude Desktop bundle carries a signed build attestation next to it, as
+`pylos-mcp.mcpb.sigstore.json`. `gh attestation verify pylos-mcp.mcpb --repo
+adamVass/pylos-mcp` confirms a downloaded bundle was built by this
+repository's release workflow from the tagged source.
 
 Sieve write access is excluded rather than guarded because scanning uploaded
 scripts for dangerous commands would only be safe if this project's parser

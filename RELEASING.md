@@ -4,7 +4,7 @@ Every step here is run manually by the repository owner. Nothing in CI publishes
 
 ## Sequence
 
-1. Date the release in `CHANGELOG.md`. After tagging, the release workflow drafts a GitHub Release on the tag with the Claude Desktop bundle, `pylos-mcp.mcpb`, attached. Paste the same section into it and publish it, which is where people watching the repository see it, and what the README's download link points at.
+1. Date the release in `CHANGELOG.md`. After tagging, the release workflow drafts a GitHub Release on the tag with the Claude Desktop bundle, `pylos-mcp.mcpb`, attached, along with its signed build attestation, `pylos-mcp.mcpb.sigstore.json`. Paste the same section into it and publish it, which is where people watching the repository see it, and what the README's download link points at.
 2. Review and commit. The tree ships exactly what was reviewed.
 3. Check the version. `package.json` carries the version npm will publish and `manifest.json` the version of the bundle. The release workflow's guard refuses a tag that disagrees with either.
 4. Push a signed version tag. `.github/workflows/release.yml` runs the gates again and publishes through npm trusted publishing, which attaches provenance, something a local `npm publish` cannot produce and that cannot be added to a version afterwards. `prepublishOnly` builds first, and the `files` field limits the package to `dist`. `package.json` ships alongside it, `mcpName` included, which is what makes a registry listing possible.
