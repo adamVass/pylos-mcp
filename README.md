@@ -25,11 +25,17 @@ Anyone in the world can put text in your inbox, and the moment an AI assistant r
 
 - **Fenced, then flagged.** Every message reaches the assistant fenced as data, and when something is off a Warnings line in the server's own words names it: hidden text, phrases aimed at an AI, encoded blobs, a Reply-To on another domain, lookalike letters.
 - **Reads and drafts by default.** Moving, sending and deleting are separate switches that stay off until you flip them. Even with sending on, every send is refused until `SEND_ALLOWLIST` names who may be addressed, and there is no `bcc` field anywhere.
-- **Runs on your machine over plain IMAP.** Gmail, iCloud, Yahoo, GMX, Fastmail, mailbox.org, Posteo, Proton via Bridge or anything self-hosted. Your password is sent only to your mail server.
+- **Runs on your machine over plain IMAP.** Gmail, Outlook and Microsoft 365, iCloud, Yahoo, GMX, Fastmail, mailbox.org, Posteo, Proton via Bridge or anything self-hosted. Outlook and Microsoft 365 sign in on Microsoft's own page in your browser, with no password to create or paste. Microsoft no longer accepts passwords from mail clients, so IMAP servers that only take a password cannot reach these accounts, and the most popular servers that can hand your mail to the assistant unfenced. Your password or Microsoft sign-in goes only to your mail provider.
 
 ## Quick start
 
-Add the server to your MCP client's config. For Claude Desktop that file is `claude_desktop_config.json`.
+In Claude Desktop, the quickest route is the bundle. Download [pylos-mcp.mcpb](https://github.com/adamVass/pylos-mcp/releases/latest/download/pylos-mcp.mcpb), open it, and fill in the form Desktop shows.
+
+The bundle's form covers the common settings. Ports, `TLS_CA_FILE`, `EMAIL_PASSWORD_CMD`, `MS_CLIENT_ID` and `MS_TENANT` are set only in the config file below.
+
+If the extension shows "Server disconnected", the reason is not in its own log. Desktop writes it to `main.log` in `~/Library/Logs/Claude` on macOS or `%APPDATA%\Claude\logs` on Windows, on a line starting with `pylos-mcp:`.
+
+Any other MCP client, or Desktop if you prefer, takes the server in its config file. For Claude Desktop that file is `claude_desktop_config.json`.
 
 ```json
 {
@@ -81,9 +87,25 @@ Warnings annotate, they never withhold. The message always comes back, and each 
 
 ## Provider setup
 
-Set `PROVIDER` to one of `gmail`, `icloud`, `yahoo`, `gmx`, `fastmail`, `mailbox.org` or `posteo` and the matching IMAP, SMTP and Sieve hosts and ports fill themselves in.
+Set `PROVIDER` to one of `gmail`, `outlook`, `icloud`, `yahoo`, `gmx`, `fastmail`, `mailbox.org` or `posteo` and the matching IMAP, SMTP and Sieve hosts and ports fill themselves in.
 
 Gmail, iCloud, Yahoo and Fastmail refuse regular account passwords over IMAP, so an app password is the only way in. Google only offers one once 2-Step Verification is on, and iCloud wants two-factor authentication on the Apple ID first. mailbox.org, GMX and Posteo accept the account password, though an app password is still the wiser choice.
+
+### Outlook and Microsoft 365
+
+Outlook.com and Microsoft 365 accounts use `PROVIDER=outlook` and no password, since Microsoft has switched password sign-in off for mail clients. Outlook.com ships with IMAP off, so first turn it on under Settings, Mail, Forwarding and IMAP. The first time the assistant reads mail, your browser opens Microsoft's sign-in page. Sign in, allow pylos-mcp to read your mail, then ask again. After that the sign-in renews itself.
+
+The sign-in is kept in a file only you can read, in `~/Library/Application Support/pylos-mcp` on macOS, `%APPDATA%\pylos-mcp` on Windows and `$XDG_CONFIG_HOME/pylos-mcp`, usually `~/.config/pylos-mcp`, elsewhere. Deleting the file and restarting your MCP client signs pylos-mcp out. Enabling `send` later asks you to sign in once more, because sending is a separate permission.
+
+### Work accounts
+
+Most organizations let only an administrator approve an app like pylos-mcp. If the sign-in page says you need admin approval, an administrator of your organization can approve it once for everyone by opening this link. After approving, the page goes blank, which is expected.
+
+```text
+https://login.microsoftonline.com/organizations/v2.0/adminconsent?client_id=45dd6df5-9736-4657-8111-fe9c810aba3b&redirect_uri=https%3A%2F%2Flogin.microsoftonline.com%2Fcommon%2Foauth2%2Fnativeclient&scope=https%3A%2F%2Foutlook.office.com%2FIMAP.AccessAsUser.All%20https%3A%2F%2Foutlook.office.com%2FSMTP.Send%20offline_access
+```
+
+Sending from a work account also needs SMTP AUTH allowed for the mailbox, which many organizations turn off. An administrator turns it on per mailbox in the Exchange admin center. Organizations that would rather use an app registered in their own tenant set `MS_CLIENT_ID` to its application ID and `MS_TENANT` to their tenant ID.
 
 Proton Mail goes through Bridge. Leave `PROVIDER` unset and set `IMAP_HOST` and `IMAP_PORT` to what Bridge shows. The username is the address Bridge tells you to use, and the password is the one in Bridge's Mailbox details, IMAP section, not your Proton account password. Bridge defaults to STARTTLS while this server only speaks implicit TLS, so switch Bridge to SSL in its Advanced Settings. Bridge's certificate is self-signed, so export it and point `TLS_CA_FILE` at it.
 
@@ -114,12 +136,14 @@ All configuration is environment variables, validated at startup. Invalid config
 
 | Variable | Default | Notes |
 |---|---|---|
-| `PROVIDER` | none | One of `gmail`, `icloud`, `yahoo`, `gmx`, `fastmail`, `mailbox.org`, `posteo`. Fills in IMAP, SMTP and Sieve hosts and ports. |
+| `PROVIDER` | none | One of `gmail`, `outlook`, `icloud`, `yahoo`, `gmx`, `fastmail`, `mailbox.org`, `posteo`. Fills in IMAP, SMTP and Sieve hosts and ports. `outlook` signs in through the browser instead of a password. |
 | `EMAIL_USER` | required | Account login. |
-| `EMAIL_PASSWORD` | none | App password. Either this or `EMAIL_PASSWORD_CMD` is required. |
+| `EMAIL_PASSWORD` | none | App password. Either this or `EMAIL_PASSWORD_CMD` is required, except with `outlook`, which takes neither. |
 | `EMAIL_PASSWORD_CMD` | none | Command whose stdout is the password, such as a keychain lookup or `pass`, so the secret never sits in the client's config file. It has 60 seconds to finish. |
+| `MS_CLIENT_ID` | pylos-mcp's own | With `outlook` only. The application ID of an app registered in your organization's tenant. |
+| `MS_TENANT` | `common` | With `outlook` only. Your tenant ID or domain, needed when `MS_CLIENT_ID` names a single-tenant app. |
 | `IMAP_HOST` / `IMAP_PORT` | preset / `993` | Explicit values for self-hosted servers. Set either to override the preset. |
-| `SMTP_HOST` / `SMTP_PORT` | preset / `465` | Required only when `send` is enabled. |
+| `SMTP_HOST` / `SMTP_PORT` | preset / `465`, `587` for `outlook` | Required only when `send` is enabled. |
 | `SIEVE_HOST` / `SIEVE_PORT` | `IMAP_HOST` / `4190` | Used only when `sieve-read` is enabled. |
 | `CAPABILITIES` | `drafts` | Comma-separated list of tiers beyond `read`, which is always included. |
 | `MAX_BODY_KB` | `64` | Message body truncation limit. |

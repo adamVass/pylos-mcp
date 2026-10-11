@@ -4,7 +4,7 @@
 // socket is opened.
 
 import { createTransport } from 'nodemailer'
-import type { Config } from '../config.js'
+import { passwordOf, type Config } from '../config.js'
 import { APP_PASSWORD_ADVICE, TLS_CA_ADVICE, ToolError, errorCode } from '../errors.js'
 import type { SentCopy } from '../safety/render.js'
 import type { ImapSession } from './client.js'
@@ -137,7 +137,12 @@ export async function sendEmail(
           attachments: collected.attachments,
         })
 
-        const info = await transport(cfg, smtp)
+        // fetched before the relay call that sendFailure wraps, so a sign-in request reaches the caller as written
+        const auth = session.tokens
+          ? { type: 'OAuth2' as const, user: cfg.user, accessToken: await session.tokens.accessToken() }
+          : { user: cfg.user, pass: passwordOf(cfg) }
+
+        const info = await transport(cfg, smtp, auth)
           .sendMail({
             envelope: { from: cfg.user, to: recipients },
             raw: message,
@@ -145,7 +150,7 @@ export async function sendEmail(
             disableUrlAccess: true,
           })
           .catch((err: unknown) => {
-            throw sendFailure(err, `${smtp.host}:${smtp.port}`)
+            throw sendFailure(err, `${smtp.host}:${smtp.port}`, session.tokens !== undefined)
           })
 
         // Only once the server has taken the message: a send the relay refused must
@@ -206,7 +211,11 @@ function addressOf(recipient: string | { address: string }): string {
   return typeof recipient === 'string' ? recipient : recipient.address
 }
 
-function transport(cfg: Config, smtp: { host: string; port: number }) {
+function transport(
+  cfg: Config,
+  smtp: { host: string; port: number },
+  auth: { user: string; pass: string } | { type: 'OAuth2'; user: string; accessToken: string },
+) {
   return createTransport({
     host: smtp.host,
     port: smtp.port,
@@ -215,7 +224,7 @@ function transport(cfg: Config, smtp: { host: string; port: number }) {
     // server that does not offer the upgrade
     secure: smtp.port === 465,
     requireTLS: true,
-    auth: { user: cfg.user, pass: cfg.password },
+    auth,
     // stdout is reserved for the MCP protocol, so nodemailer must never write to it
     logger: false,
     tls: secureOptions(smtp.host, cfg.tlsCaFile),
@@ -227,10 +236,16 @@ function transport(cfg: Config, smtp: { host: string; port: number }) {
  * error carries the server's own response text, which is attacker-controllable
  * on a relay the user does not run.
  */
-function sendFailure(err: unknown, target: string): ToolError {
+function sendFailure(err: unknown, target: string, microsoft: boolean): ToolError {
   switch (errorCode(err)) {
     case 'EAUTH':
     case 'ENOAUTH':
+      if (microsoft) {
+        return new ToolError(
+          'auth',
+          'Microsoft refused sending for EMAIL_USER. On work accounts an administrator may need to turn on SMTP AUTH for this mailbox.',
+        )
+      }
       return new ToolError(
         'auth',
         `the SMTP server rejected the credentials. Check EMAIL_USER and the password; ${APP_PASSWORD_ADVICE}`,

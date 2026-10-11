@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { loadConfig, ConfigError } from '../../src/config.js'
+import { loadConfig, ConfigError, MICROSOFT_CLIENT_ID } from '../../src/config.js'
 
 const BASE = { EMAIL_USER: 'a@mailbox.org', EMAIL_PASSWORD: 'pw', PROVIDER: 'mailbox.org' }
 
@@ -7,6 +7,9 @@ describe('loadConfig', () => {
   it('fills IMAP host/port from provider preset', () => {
     const c = loadConfig(BASE)
     expect(c.imap).toEqual({ host: 'imap.mailbox.org', port: 993 })
+  })
+  it('password presets send on 465', () => {
+    expect(loadConfig({ ...BASE, CAPABILITIES: 'send' }).smtp).toEqual({ host: 'smtp.mailbox.org', port: 465 })
   })
   it('defaults capabilities to read+drafts', () => {
     expect([...loadConfig(BASE).capabilities].sort()).toEqual(['drafts', 'read'])
@@ -124,5 +127,58 @@ describe('loadConfig', () => {
   it('STRIP_HIDDEN_TEXT=true with FLAG_HIDDEN_TEXT=false is refused as inert', () => {
     expect(() => loadConfig({ ...BASE, STRIP_HIDDEN_TEXT: 'true', FLAG_HIDDEN_TEXT: 'false' })).toThrow(ConfigError)
     expect(loadConfig({ ...BASE, STRIP_HIDDEN_TEXT: 'true' }).detect.stripHiddenText).toBe(true)
+  })
+})
+
+describe('PROVIDER=outlook', () => {
+  const OUTLOOK = { EMAIL_USER: 'jane@outlook.example', PROVIDER: 'outlook' }
+  const IMAP = 'https://outlook.office.com/IMAP.AccessAsUser.All'
+  const SMTP = 'https://outlook.office.com/SMTP.Send'
+
+  it('signs in through Microsoft on the Outlook hosts, asking for send rights only with send', () => {
+    const read = loadConfig(OUTLOOK)
+    expect(read.imap).toEqual({ host: 'outlook.office365.com', port: 993 })
+    expect(read.password).toBeUndefined()
+    expect(read.microsoft).toEqual({
+      clientId: MICROSOFT_CLIENT_ID,
+      tenant: 'common',
+      scopes: ['offline_access', IMAP],
+    })
+
+    const send = loadConfig({ ...OUTLOOK, CAPABILITIES: 'send' })
+    expect(send.smtp).toEqual({ host: 'smtp.office365.com', port: 587 })
+    expect(send.microsoft?.scopes).toEqual(['offline_access', IMAP, SMTP])
+  })
+
+  it('takes an organization app from MS_CLIENT_ID and MS_TENANT', () => {
+    const c = loadConfig({
+      ...OUTLOOK,
+      MS_CLIENT_ID: 'ABCDEF01-2345-6789-abcd-ef0123456789',
+      MS_TENANT: 'contoso.onmicrosoft.com',
+    })
+    expect(c.microsoft?.clientId).toBe('ABCDEF01-2345-6789-abcd-ef0123456789')
+    expect(c.microsoft?.tenant).toBe('contoso.onmicrosoft.com')
+  })
+
+  it('refuses settings that cannot apply to a Microsoft sign-in', () => {
+    expect(() => loadConfig({ ...OUTLOOK, EMAIL_PASSWORD: 'pw' })).toThrow(
+      new ConfigError('PROVIDER=outlook signs in through the browser. Remove EMAIL_PASSWORD and EMAIL_PASSWORD_CMD'),
+    )
+    // refused before the command would run
+    expect(() => loadConfig({ ...OUTLOOK, EMAIL_PASSWORD_CMD: 'exit 1' })).toThrow(
+      new ConfigError('PROVIDER=outlook signs in through the browser. Remove EMAIL_PASSWORD and EMAIL_PASSWORD_CMD'),
+    )
+    expect(() => loadConfig({ ...OUTLOOK, CAPABILITIES: 'sieve-read' })).toThrow(
+      new ConfigError('Microsoft does not offer Sieve. Remove sieve-read from CAPABILITIES'),
+    )
+    expect(() => loadConfig({ ...BASE, MS_TENANT: 'common' })).toThrow(
+      new ConfigError('MS_CLIENT_ID and MS_TENANT apply only with PROVIDER=outlook'),
+    )
+    expect(() => loadConfig({ ...OUTLOOK, MS_TENANT: 'evil/../x' })).toThrow(
+      new ConfigError('MS_TENANT must be a tenant ID or domain, got "evil/../x"'),
+    )
+    expect(() => loadConfig({ ...OUTLOOK, MS_CLIENT_ID: 'nope' })).toThrow(
+      new ConfigError('MS_CLIENT_ID must be an application (client) ID, got "nope"'),
+    )
   })
 })

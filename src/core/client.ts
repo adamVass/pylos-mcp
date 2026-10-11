@@ -1,9 +1,18 @@
 import { ImapFlow, type ImapFlowOptions } from 'imapflow'
-import type { Config } from '../config.js'
+import { type Config, passwordOf } from '../config.js'
 import { APP_PASSWORD_ADVICE, TLS_CA_ADVICE, ToolError, errorCode } from '../errors.js'
 import { secureOptions } from './tls.js'
 
 type SpecialUseFlag = '\\Drafts' | '\\Sent' | '\\Trash'
+
+/** where an OAuth account's access tokens come from, MicrosoftAuth in production */
+export interface TokenSource {
+  accessToken(): Promise<string>
+  forget(): Promise<void>
+}
+
+const MICROSOFT_IMAP_REFUSED =
+  'Microsoft refused the sign-in for EMAIL_USER. Either the browser sign-in used another account, or IMAP is turned off for this mailbox. On Outlook.com, turn it on under Settings, Mail, Forwarding and IMAP. On work accounts an administrator turns it on. Then ask again to sign in afresh.'
 
 /**
  * Owns the single IMAP connection for the process. TLS is always on and always
@@ -14,7 +23,10 @@ export class ImapSession {
   /** in-flight connect, so concurrent callers share one connection instead of racing */
   private pending?: Promise<ImapFlow>
 
-  constructor(private readonly cfg: Config) {}
+  constructor(
+    private readonly cfg: Config,
+    readonly tokens?: TokenSource,
+  ) {}
 
   /**
    * Reconnects if the cached connection has been lost, but never retries `fn`
@@ -74,7 +86,9 @@ export class ImapSession {
   }
 
   private async connect(): Promise<ImapFlow> {
-    const client = new ImapFlow(this.buildOptions())
+    // outside the try below, so a sign-in request reaches the caller as written
+    // rather than as connectionError's generic auth text
+    const client = new ImapFlow(await this.buildOptions())
     // ImapFlow is an EventEmitter, so an unhandled 'error' event would crash the
     // process. Failures surface through the rejected promises instead.
     client.on('error', () => {})
@@ -86,6 +100,11 @@ export class ImapSession {
       await client.connect()
     } catch (err) {
       client.close()
+      // forgetting is what lets a sign-in with the wrong account be corrected by asking again
+      if (this.tokens && isAuthFailure(err)) {
+        await this.tokens.forget()
+        throw new ToolError('auth', MICROSOFT_IMAP_REFUSED)
+      }
       throw connectionError(err, this.cfg.imap.host, this.cfg.imap.port)
     }
 
@@ -93,14 +112,16 @@ export class ImapSession {
     return client
   }
 
-  private buildOptions(): ImapFlowOptions {
+  private async buildOptions(): Promise<ImapFlowOptions> {
     const { host, port } = this.cfg.imap
     return {
       host,
       port,
       secure: true,
       servername: host,
-      auth: { user: this.cfg.user, pass: this.cfg.password },
+      auth: this.tokens
+        ? { user: this.cfg.user, accessToken: await this.tokens.accessToken() }
+        : { user: this.cfg.user, pass: passwordOf(this.cfg) },
       // stdout is reserved for the MCP protocol, so imapflow must never write to it
       logger: false,
       emitLogs: false,

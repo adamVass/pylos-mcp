@@ -1,9 +1,83 @@
+import { readFileSync } from 'node:fs'
+import type { AddressInfo } from 'node:net'
+import { dirname, join } from 'node:path'
+import { createServer as createTlsServer } from 'node:tls'
 import { describe, expect } from 'vitest'
 import { ImapSession } from '../../src/core/client.js'
 import { ToolError } from '../../src/errors.js'
-import { testConfig, itIntegration } from './helpers.js'
+import { testConfig, itIntegration, testCaFile } from './helpers.js'
+
+const SOH = String.fromCharCode(1)
+
+/**
+ * Dovecot offers no XOAUTH2, and imapflow never attempts it against a server
+ * that does not advertise it, so this refusal comes from a fake answering just
+ * enough IMAP for one login attempt.
+ */
+async function refusingXoauth2Server() {
+  const attempts: string[] = []
+  const certDir = dirname(testCaFile)
+  const server = createTlsServer(
+    { key: readFileSync(join(certDir, 'key.pem')), cert: readFileSync(join(certDir, 'cert.pem')) },
+    (socket) => {
+      socket.on('error', () => {})
+      socket.write('* OK [CAPABILITY IMAP4rev1 AUTH=XOAUTH2] ready\r\n')
+      let buffered = ''
+      socket.on('data', (chunk) => {
+        buffered += chunk
+        for (let end = buffered.indexOf('\r\n'); end !== -1; end = buffered.indexOf('\r\n')) {
+          const [tag, command = '', ...args] = buffered.slice(0, end).split(' ')
+          buffered = buffered.slice(end + 2)
+          if (command.toUpperCase() === 'AUTHENTICATE') {
+            attempts.push(`${args[0]} ${Buffer.from(args[1] ?? '', 'base64').toString('utf8')}`)
+            socket.write(`${tag} NO [AUTHENTICATIONFAILED] AUTHENTICATE failed\r\n`)
+          } else if (command.toUpperCase() === 'CAPABILITY') {
+            socket.write(`* CAPABILITY IMAP4rev1 AUTH=XOAUTH2\r\n${tag} OK done\r\n`)
+          } else {
+            socket.write(`${tag} BAD unsupported\r\n`)
+          }
+        }
+      })
+    },
+  )
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  return {
+    port: (server.address() as AddressInfo).port,
+    attempts,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  }
+}
 
 describe('ImapSession against a local Dovecot container', () => {
+  // the attempt pins that imapflow got the access token and no password
+  itIntegration('a token the server refuses was sent as XOAUTH2, and is forgotten', async () => {
+    const fake = await refusingXoauth2Server()
+    let forgotten = 0
+    const tokens = {
+      accessToken: async () => 'not-a-token',
+      forget: async () => {
+        forgotten += 1
+      },
+    }
+    const s = new ImapSession(
+      testConfig({ PROVIDER: 'outlook', EMAIL_PASSWORD: undefined, IMAP_PORT: String(fake.port) }),
+      tokens,
+    )
+    try {
+      await expect(s.withClient(async () => 'unreached')).rejects.toThrow(
+        new ToolError(
+          'auth',
+          'Microsoft refused the sign-in for EMAIL_USER. Either the browser sign-in used another account, or IMAP is turned off for this mailbox. On Outlook.com, turn it on under Settings, Mail, Forwarding and IMAP. On work accounts an administrator turns it on. Then ask again to sign in afresh.',
+        ),
+      )
+      expect(fake.attempts).toEqual([`XOAUTH2 user=tester${SOH}auth=Bearer not-a-token${SOH}${SOH}`])
+      expect(forgotten).toBe(1)
+    } finally {
+      await s.close()
+      await fake.close()
+    }
+  })
+
   itIntegration('connects over TLS and lists folders', async () => {
     const s = new ImapSession(testConfig())
     try {

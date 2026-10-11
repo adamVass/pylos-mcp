@@ -46,6 +46,16 @@ gets the quarantine flag that browsers and Mail set, before any of its bytes
 are written, so opening a saved app goes through Gatekeeper. If the flag cannot
 be set, the file is not saved.
 
+A Microsoft sign-in keeps its refresh token in a file readable by its owner
+only. That is the same protection a password in the MCP client's config file
+has, no more. Access tokens stay in memory. The sign-in uses PKCE, so there is
+no client secret to leak, and its listener runs on 127.0.0.1 for at most five
+minutes and answers only its random start link and the redirect carrying its
+own random state. Deleting the file and restarting the client signs out.
+Microsoft's account pages revoke the app's access from the next renewal on,
+account.microsoft.com for personal accounts and myapps.microsoft.com for work
+accounts.
+
 Sieve write access is excluded rather than guarded because scanning uploaded
 scripts for dangerous commands would only be safe if this project's parser
 agreed with the mail server's parser exactly. Any disagreement between the two

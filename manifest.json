@@ -1,0 +1,95 @@
+{
+  "manifest_version": "0.3",
+  "name": "pylos-mcp",
+  "display_name": "pylos-mcp",
+  "version": "0.6.0",
+  "description": "Read-focused, prompt-injection-hardened email for any IMAP provider",
+  "long_description": "Search, read and draft your mail while every message reaches the assistant fenced as data, with a Warnings line naming what it hides: hidden text, phrases aimed at an AI, encoded blobs, a Reply-To on another domain, lookalike letters. Moving, sending and deleting stay off until you enable them, and sending only ever reaches the addresses you allow.",
+  "author": { "name": "Adam Vass", "url": "https://github.com/adamVass" },
+  "repository": { "type": "git", "url": "https://github.com/adamVass/pylos-mcp" },
+  "homepage": "https://github.com/adamVass/pylos-mcp#readme",
+  "support": "https://github.com/adamVass/pylos-mcp/issues",
+  "license": "MIT",
+  "icon": "icon.png",
+  "keywords": ["email", "imap", "outlook", "prompt-injection", "security"],
+  "server": {
+    "type": "node",
+    "entry_point": "dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/index.js"],
+      "env": {
+        "PROVIDER": "${user_config.provider}",
+        "EMAIL_USER": "${user_config.email}",
+        "EMAIL_PASSWORD": "${user_config.password}",
+        "CAPABILITIES": "${user_config.capabilities}",
+        "SEND_ALLOWLIST": "${user_config.send_allowlist}",
+        "IMAP_HOST": "${user_config.imap_host}",
+        "SMTP_HOST": "${user_config.smtp_host}",
+        "DOWNLOAD_DIR": "${user_config.download_dir}"
+      }
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "win32"],
+    "runtimes": { "node": ">=20.0.0" }
+  },
+  "user_config": {
+    "provider": {
+      "type": "string",
+      "title": "Provider",
+      "description": "One of outlook, gmail, icloud, yahoo, gmx, fastmail, mailbox.org or posteo. Leave blank for other servers and fill in the IMAP host.",
+      "required": false,
+      "default": ""
+    },
+    "email": {
+      "type": "string",
+      "title": "Email address",
+      "description": "The account to read.",
+      "required": true
+    },
+    "password": {
+      "type": "string",
+      "title": "App password",
+      "description": "An app password for the account. Leave blank for outlook, which signs in through the browser.",
+      "sensitive": true,
+      "required": false,
+      "default": ""
+    },
+    "capabilities": {
+      "type": "string",
+      "title": "Capabilities",
+      "description": "Comma-separated tiers beyond reading: drafts, manage, send, delete, sieve-read.",
+      "default": "drafts",
+      "required": false
+    },
+    "send_allowlist": {
+      "type": "string",
+      "title": "Send allowlist",
+      "description": "Who send may address: addresses or *@domain, comma-separated. Sending stays closed without it.",
+      "required": false,
+      "default": ""
+    },
+    "imap_host": {
+      "type": "string",
+      "title": "IMAP host",
+      "description": "Only for servers without a provider preset.",
+      "required": false,
+      "default": ""
+    },
+    "smtp_host": {
+      "type": "string",
+      "title": "SMTP host",
+      "description": "Only for servers without a provider preset, and only when send is enabled.",
+      "required": false,
+      "default": ""
+    },
+    "download_dir": {
+      "type": "directory",
+      "title": "Download folder",
+      "description": "Where attachments are saved. Defaults to Downloads.",
+      "required": false,
+      "default": ""
+    }
+  }
+}

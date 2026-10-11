@@ -10,7 +10,7 @@
 
 import { connect as netConnect, type Socket } from 'node:net'
 import { connect as tlsConnect } from 'node:tls'
-import type { Config } from '../config.js'
+import { passwordOf, type Config } from '../config.js'
 import { APP_PASSWORD_ADVICE, TLS_CA_ADVICE, ToolError } from '../errors.js'
 import { readLimitBytes } from '../safety/limits.js'
 import { makeUntrusted, type UntrustedText } from '../safety/untrusted.js'
@@ -91,7 +91,7 @@ async function authenticated(cfg: Config): Promise<SieveConnection> {
 
     await conn.upgrade(cfg)
     await conn.readCapabilities()
-    await conn.authenticate(cfg.user, cfg.password)
+    await conn.authenticate(cfg.user, passwordOf(cfg))
     return conn
   } catch (err) {
     // no LOGOUT: the session never became one, and a failure here must not be

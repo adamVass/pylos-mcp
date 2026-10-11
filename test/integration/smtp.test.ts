@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect } from 'vi
 import type { ImapFlow } from 'imapflow'
 import { simpleParser } from 'mailparser'
 import { SMTPServer } from 'smtp-server'
+import type { Config } from '../../src/config.js'
 import { makeCoreApi } from '../../src/core/api.js'
 import { ImapSession } from '../../src/core/client.js'
 import { markAnswered } from '../../src/core/mailbox-ops.js'
@@ -22,6 +23,7 @@ const PORT = Number(process.env.PYLOS_SMTP_PORT ?? 12525)
 
 const USER = 'tester@x.example'
 const PASSWORD = 'testpass'
+const ACCESS_TOKEN = 'access-token-1'
 
 const ALLOWED = 'a@x.example'
 const OUTSIDE = 'b@evil.example'
@@ -77,6 +79,7 @@ describe('sendEmail against an in-process SMTP server', () => {
       // STARTTLS, not implicit TLS: the client sets requireTLS, so a server that
       // failed to offer it must fail the send rather than deliver in the clear
       secure: false,
+      authMethods: ['PLAIN', 'LOGIN', 'XOAUTH2'],
       key: readFileSync(join(certDir, 'key.pem')),
       cert: readFileSync(join(certDir, 'cert.pem')),
       logger: false,
@@ -85,7 +88,8 @@ describe('sendEmail against an in-process SMTP server', () => {
         callback()
       },
       onAuth(auth, _session, callback) {
-        if (auth.username === USER && auth.password === PASSWORD) {
+        const valid = auth.method === 'XOAUTH2' ? auth.accessToken === ACCESS_TOKEN : auth.password === PASSWORD
+        if (auth.username === USER && valid) {
           callback(null, { user: auth.username })
           return
         }
@@ -133,6 +137,37 @@ describe('sendEmail against an in-process SMTP server', () => {
   function idleSession(): ImapSession {
     return new ImapSession(sendConfig())
   }
+
+  function outlookSession(accessToken: string, onForget = () => {}): { cfg: Config; session: ImapSession } {
+    const cfg = sendConfig({ PROVIDER: 'outlook', EMAIL_PASSWORD: undefined })
+    return {
+      cfg,
+      session: new ImapSession(cfg, { accessToken: async () => accessToken, forget: async () => onForget() }),
+    }
+  }
+
+  itIntegration('signs in to the relay with the Microsoft access token', async () => {
+    const { cfg, session } = outlookSession(ACCESS_TOKEN)
+    await sendEmail(session, cfg, new SendState(), { to: [ALLOWED], subject: 'oauth', body: 'b' }, new ComposeBudget())
+    expect(deliveries).toHaveLength(1)
+  })
+
+  itIntegration('a relay refusing the token names the Microsoft cause and keeps the token', async () => {
+    let forgotten = 0
+    const { cfg, session } = outlookSession('wrong-token', () => {
+      forgotten += 1
+    })
+    await expect(
+      sendEmail(session, cfg, new SendState(), { to: [ALLOWED], subject: 'oauth', body: 'b' }, new ComposeBudget()),
+    ).rejects.toThrow(
+      new ToolError(
+        'auth',
+        'Microsoft refused sending for EMAIL_USER. On work accounts an administrator may need to turn on SMTP AUTH for this mailbox.',
+      ),
+    )
+    expect(forgotten).toBe(0)
+    expect(deliveries).toEqual([])
+  })
 
   itIntegration('delivers the message over STARTTLS and reports the accepted recipients', async () => {
     const state = new SendState()

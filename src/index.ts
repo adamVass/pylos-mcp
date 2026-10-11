@@ -3,6 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { ConfigError, loadConfig, type Config } from './config.js'
 import { makeCoreApi } from './core/api.js'
 import { ImapSession } from './core/client.js'
+import { MicrosoftAuth } from './core/oauth.js'
 import { buildServer } from './mcp/server.js'
 
 /**
@@ -26,7 +27,8 @@ async function main(): Promise<void> {
 
   // Exactly one ImapSession/CoreApi for the process: the send tier's session
   // cap and the IMAP connection's single-connection design both assume it.
-  const session = new ImapSession(cfg)
+  const tokens = cfg.microsoft ? new MicrosoftAuth(cfg.user, cfg.microsoft) : undefined
+  const session = new ImapSession(cfg, tokens)
   const core = makeCoreApi(cfg, session)
   const server = buildServer(cfg, core)
 

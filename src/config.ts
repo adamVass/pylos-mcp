@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { z } from 'zod'
+import type { MicrosoftAuthConfig } from './core/oauth.js'
 import { isAllowlistEntry } from './core/smtp.js'
 import type { DetectOptions } from './safety/detect.js'
 
@@ -10,7 +11,8 @@ type Capability = 'read' | 'drafts' | 'manage' | 'send' | 'delete' | 'sieve-read
 
 export interface Config {
   user: string
-  password: string
+  password?: string // present iff microsoft is absent
+  microsoft?: MicrosoftAuthConfig // present iff the preset signs in through Microsoft
   imap: { host: string; port: number }
   smtp?: { host: string; port: number } // present iff 'send' enabled
   sieve?: { host: string; port: number } // present iff 'sieve-read' enabled
@@ -31,18 +33,27 @@ export class ConfigError extends Error {}
 interface Preset {
   imapHost: string
   smtpHost: string
+  smtpPort: number
+  auth: 'password' | 'microsoft'
 }
 
-// all IMAP ports are 993, all SMTP ports are 465
+// all IMAP ports are 993
 const PRESETS: ReadonlyMap<string, Preset> = new Map([
-  ['mailbox.org', { imapHost: 'imap.mailbox.org', smtpHost: 'smtp.mailbox.org' }],
-  ['fastmail', { imapHost: 'imap.fastmail.com', smtpHost: 'smtp.fastmail.com' }],
-  ['gmail', { imapHost: 'imap.gmail.com', smtpHost: 'smtp.gmail.com' }],
-  ['yahoo', { imapHost: 'imap.mail.yahoo.com', smtpHost: 'smtp.mail.yahoo.com' }],
-  ['icloud', { imapHost: 'imap.mail.me.com', smtpHost: 'smtp.mail.me.com' }],
-  ['gmx', { imapHost: 'imap.gmx.net', smtpHost: 'mail.gmx.net' }],
-  ['posteo', { imapHost: 'posteo.de', smtpHost: 'posteo.de' }],
+  ['mailbox.org', { imapHost: 'imap.mailbox.org', smtpHost: 'smtp.mailbox.org', smtpPort: 465, auth: 'password' }],
+  ['fastmail', { imapHost: 'imap.fastmail.com', smtpHost: 'smtp.fastmail.com', smtpPort: 465, auth: 'password' }],
+  ['gmail', { imapHost: 'imap.gmail.com', smtpHost: 'smtp.gmail.com', smtpPort: 465, auth: 'password' }],
+  ['yahoo', { imapHost: 'imap.mail.yahoo.com', smtpHost: 'smtp.mail.yahoo.com', smtpPort: 465, auth: 'password' }],
+  ['icloud', { imapHost: 'imap.mail.me.com', smtpHost: 'smtp.mail.me.com', smtpPort: 465, auth: 'password' }],
+  ['gmx', { imapHost: 'imap.gmx.net', smtpHost: 'mail.gmx.net', smtpPort: 465, auth: 'password' }],
+  ['posteo', { imapHost: 'posteo.de', smtpHost: 'posteo.de', smtpPort: 465, auth: 'password' }],
+  // Microsoft submits only over STARTTLS, which transport() fails closed on
+  ['outlook', { imapHost: 'outlook.office365.com', smtpHost: 'smtp.office365.com', smtpPort: 587, auth: 'microsoft' }],
 ])
+
+/** pylos-mcp's own public client registration. Not a secret: a public client has none. */
+export const MICROSOFT_CLIENT_ID = '45dd6df5-9736-4657-8111-fe9c810aba3b'
+const OUTLOOK_IMAP_SCOPE = 'https://outlook.office.com/IMAP.AccessAsUser.All'
+const OUTLOOK_SMTP_SCOPE = 'https://outlook.office.com/SMTP.Send'
 
 const ALL_CAPABILITIES: readonly Capability[] = ['read', 'drafts', 'manage', 'send', 'delete', 'sieve-read']
 const CAPABILITY_SET: ReadonlySet<string> = new Set(ALL_CAPABILITIES)
@@ -162,21 +173,54 @@ function withoutEmptyValues(env: Record<string, string | undefined>): Record<str
   return copy
 }
 
+function microsoftAuth(env: Record<string, string | undefined>, capabilities: Set<Capability>): MicrosoftAuthConfig {
+  // checked before resolvePassword would run EMAIL_PASSWORD_CMD for a password that can never be used
+  if (env.EMAIL_PASSWORD !== undefined || env.EMAIL_PASSWORD_CMD !== undefined) {
+    throw new ConfigError('PROVIDER=outlook signs in through the browser. Remove EMAIL_PASSWORD and EMAIL_PASSWORD_CMD')
+  }
+  if (capabilities.has('sieve-read')) {
+    throw new ConfigError('Microsoft does not offer Sieve. Remove sieve-read from CAPABILITIES')
+  }
+  const tenant = env.MS_TENANT ?? 'common'
+  // it becomes a path segment of the sign-in URL, so no slashes and no dot segments
+  if (tenant.length > 100 || !/^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*$/.test(tenant)) {
+    throw new ConfigError(`MS_TENANT must be a tenant ID or domain, got "${tenant}"`)
+  }
+  const clientId = env.MS_CLIENT_ID ?? MICROSOFT_CLIENT_ID
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clientId)) {
+    throw new ConfigError(`MS_CLIENT_ID must be an application (client) ID, got "${clientId}"`)
+  }
+  return {
+    clientId,
+    tenant,
+    scopes: ['offline_access', OUTLOOK_IMAP_SCOPE, ...(capabilities.has('send') ? [OUTLOOK_SMTP_SCOPE] : [])],
+  }
+}
+
+/** password login only: config leaves `password` unset exactly when `microsoft` is set */
+export function passwordOf(cfg: Config): string {
+  if (cfg.password === undefined) throw new Error('password login attempted on a Microsoft sign-in account')
+  return cfg.password
+}
+
 export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
   const env = withoutEmptyValues(rawEnv)
 
   const user = requireString('EMAIL_USER', env.EMAIL_USER)
-  const password = resolvePassword(env)
-
   const preset = resolveProvider(env.PROVIDER)
+  const capabilities = parseCapabilities(env.CAPABILITIES)
+
+  const microsoft = preset?.auth === 'microsoft' ? microsoftAuth(env, capabilities) : undefined
+  if (!microsoft && (env.MS_CLIENT_ID !== undefined || env.MS_TENANT !== undefined)) {
+    throw new ConfigError('MS_CLIENT_ID and MS_TENANT apply only with PROVIDER=outlook')
+  }
+  const password = microsoft ? undefined : resolvePassword(env)
 
   const imapHost = env.IMAP_HOST ?? preset?.imapHost
   if (!imapHost) {
     throw new ConfigError('IMAP host is not configured. Set IMAP_HOST or PROVIDER')
   }
   const imap = { host: imapHost, port: numericEnv('IMAP_PORT', env.IMAP_PORT, 993) }
-
-  const capabilities = parseCapabilities(env.CAPABILITIES)
 
   let smtp: { host: string; port: number } | undefined
   if (capabilities.has('send')) {
@@ -186,7 +230,7 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
         'SMTP host is not configured. Set SMTP_HOST or PROVIDER (required because the "send" capability is enabled)',
       )
     }
-    smtp = { host: smtpHost, port: numericEnv('SMTP_PORT', env.SMTP_PORT, 465) }
+    smtp = { host: smtpHost, port: numericEnv('SMTP_PORT', env.SMTP_PORT, preset?.smtpPort ?? 465) }
   }
 
   let sieve: { host: string; port: number } | undefined
@@ -252,6 +296,7 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
   return {
     user,
     password,
+    microsoft,
     imap,
     smtp,
     sieve,
