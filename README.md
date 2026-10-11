@@ -36,7 +36,7 @@ Anyone in the world can put text in your inbox, and the moment an AI assistant r
 
 ## Quick start
 
-pylos-mcp runs locally through `npx` and needs Node.js 22 or later. Every route below starts from example values, so replace the address and password with your own. Use an app password, not your account's regular password. [Provider setup](#provider-setup) says where to get one.
+pylos-mcp runs locally through `npx` and needs Node.js 22 or later. Every route below starts from example values, so replace the address and password with your own. Use an app password, not your account's regular password, and for Outlook no password at all. [Provider setup](#provider-setup) says where to get one.
 
 **Claude Desktop.** Download [pylos-mcp.mcpb](https://github.com/adamVass/pylos-mcp/releases/latest/download/pylos-mcp.mcpb), open it, and fill in the form Desktop shows.
 

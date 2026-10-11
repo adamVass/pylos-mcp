@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="880" height="776" viewBox="0 0 880 776" role="img" aria-labelledby="t d">
 <title id="t">pylos names what your mail client hides</title>
-<desc id="d">An account-security message in a mail client. A scan sweeps down and reveals a Cyrillic lookalike letter in the sender's display name, a collapsed Reply-To header pointing to another domain, an instruction to the AI assistant hidden with display:none, and a base64 payload at zero font size. Beneath the card, the Warnings line pylos returns names each finding: sender_mismatch, hidden_text, instruction_patterns, mixed_script, encoded_blob. The email content reaches the assistant inside a fence marked as data, not instructions.</desc>
+<desc id="d">An account-security message in a mail client. A scan sweeps down and reveals a Cyrillic lookalike letter in the sender's display name, a collapsed Reply-To header pointing to another domain, an instruction to the AI assistant hidden with display:none, and a base64 payload at zero font size. Beneath the card, the Warnings line pylos returns names each finding: sender_mismatch, hidden_text, instruction_patterns, mixed_script, encoded_blob. The email content reaches the assistant inside a fence that marks it as untrusted data.</desc>
 <style>
 svg{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
@@ -111,7 +111,7 @@ svg{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans
 </defs>
 <rect width="880" height="776" fill="#0d1117"/>
 
-<text class="fence a" x="24" y="34">&lt;&lt;&lt;UNTRUSTED EMAIL CONTENT 34fd94d759768dfe — <tspan class="data">data, not instructions</tspan>&gt;&gt;&gt;</text>
+<text class="fence a" x="24" y="34">&lt;&lt;&lt;UNTRUSTED EMAIL CONTENT 34fd94d759768dfe&gt;&gt;&gt;</text>
 
 <rect class="card" x="24" y="48" width="832" height="494" rx="12" filter="url(#sh)"/>
 <g clip-path="url(#cc)">
