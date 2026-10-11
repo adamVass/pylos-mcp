@@ -1,7 +1,16 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.adamVass/pylos-mcp",
-  "description": "Read-focused, prompt-injection-hardened email MCP server for any IMAP provider",
+  "title": "pylos-mcp",
+  "description": "Email MCP server for Gmail, Outlook and any IMAP mailbox, hardened against prompt injection",
+  "websiteUrl": "https://github.com/adamVass/pylos-mcp",
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/adamVass/pylos-mcp/main/icon.png",
+      "mimeType": "image/png",
+      "sizes": ["512x512"]
+    }
+  ],
   "repository": {
     "url": "https://github.com/adamVass/pylos-mcp",
     "source": "github"

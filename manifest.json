@@ -3,7 +3,7 @@
   "name": "pylos-mcp",
   "display_name": "pylos-mcp",
   "version": "0.6.0",
-  "description": "Read-focused, prompt-injection-hardened email for any IMAP provider",
+  "description": "Email MCP server for Gmail, Outlook and any IMAP mailbox, hardened against prompt injection",
   "long_description": "Search, read and draft your mail while every message reaches the assistant fenced as data, with a Warnings line naming what it hides: hidden text, phrases aimed at an AI, encoded blobs, a Reply-To on another domain, lookalike letters. Moving, sending and deleting stay off until you enable them, and sending only ever reaches the addresses you allow.",
   "author": { "name": "Adam Vass", "url": "https://github.com/adamVass" },
   "repository": { "type": "git", "url": "https://github.com/adamVass/pylos-mcp" },
@@ -11,7 +11,7 @@
   "support": "https://github.com/adamVass/pylos-mcp/issues",
   "license": "MIT",
   "icon": "icon.png",
-  "keywords": ["email", "imap", "outlook", "prompt-injection", "security"],
+  "keywords": ["email", "imap", "gmail", "outlook", "microsoft-365", "prompt-injection", "security"],
   "server": {
     "type": "node",
     "entry_point": "dist/index.js",
@@ -66,7 +66,7 @@
     "send_allowlist": {
       "type": "string",
       "title": "Send allowlist",
-      "description": "Who send may address: addresses or *@domain, comma-separated. Sending stays closed without it.",
+      "description": "Who send may address: addresses or *@domain, comma-separated, or * for anyone. Sending stays closed without it.",
       "required": false,
       "default": ""
     },

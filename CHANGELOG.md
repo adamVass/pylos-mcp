@@ -9,6 +9,14 @@ Notable changes to pylos-mcp. The format follows [Keep a Changelog](https://keep
 - `get_thread` lists the conversation a message belongs to, from its own folder, INBOX and Sent, oldest first, each message once and at most 50.
 - `get_email` warns with `dmarc_fail` when your own mail server's DMARC check on the message failed. Only the header your provider wrote counts, recognized by its server name, which the presets know for Gmail, Outlook, mailbox.org, GMX, Posteo and Fastmail. `AUTHSERV_ID` sets it elsewhere, and `FLAG_DMARC_FAIL=false` turns the warning off.
 - `IMAP_STARTTLS=true` connects to servers that offer IMAP only through STARTTLS, such as Proton Bridge in its default mode. The switch to TLS has to succeed before the login is sent, and a server that does not offer it is refused.
+- `llms-install.md` walks an AI agent such as Cline through setting the server up.
+- The server reports its description, website and icon to clients, and the MCP registry entry carries the icon too, so directories can show the logo.
+
+### Changed
+
+- The README starts with install buttons and per client setup, compares the approach with gaps email servers can have, and answers common questions.
+- One description everywhere: "Email MCP server for Gmail, Outlook and any IMAP mailbox, hardened against prompt injection".
+- The Claude Desktop form mentions that `*` lets sending reach anyone.
 
 ## [0.6.0] - 2026-10-11
 

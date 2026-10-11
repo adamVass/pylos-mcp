@@ -20,8 +20,11 @@ const DEFAULT_SIX = ['create_draft', 'get_attachment', 'get_email', 'get_thread'
 // the depth the published tarball actually has (dist/mcp/server.js, two levels
 // below the package root), which is what catches a wrong relative path silently
 // reporting the wrong version instead of failing loudly.
-const packageVersion = (JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8')) as { version: string })
-  .version
+const packageJson = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8')) as {
+  version: string
+  description: string
+}
+const packageVersion = packageJson.version
 
 beforeAll(() => {
   execFileSync('npm', ['run', 'build'], { cwd: ROOT, stdio: 'inherit' })
@@ -37,7 +40,20 @@ it('lists the default six tools over real stdio without connecting to IMAP', asy
 
   await client.connect(transport)
   try {
-    expect(client.getServerVersion()?.version).toBe(packageVersion)
+    // what directories and clients show for the server, so the logo stops falling back to an avatar
+    expect(client.getServerVersion()).toEqual({
+      name: 'pylos-mcp',
+      version: packageVersion,
+      description: packageJson.description,
+      websiteUrl: 'https://github.com/adamVass/pylos-mcp',
+      icons: [
+        {
+          src: 'https://raw.githubusercontent.com/adamVass/pylos-mcp/main/icon.png',
+          mimeType: 'image/png',
+          sizes: ['512x512'],
+        },
+      ],
+    })
 
     const { tools } = await client.listTools()
     expect(tools.map((tool) => tool.name).sort()).toEqual(DEFAULT_SIX)

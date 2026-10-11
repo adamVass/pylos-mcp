@@ -14,7 +14,21 @@ import { registerSieveTools } from './tools/sieve.js'
 // by the test loader) and in dist/ (compiled), since rootDir and outDir are one
 // level below the package root either way.
 const packageJsonPath = fileURLToPath(new URL('../../package.json', import.meta.url))
-const SERVER_VERSION = (JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { version: string }).version
+const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { version: string; description: string }
+
+const SERVER_INFO = {
+  name: 'pylos-mcp',
+  version: packageJson.version,
+  description: packageJson.description,
+  websiteUrl: 'https://github.com/adamVass/pylos-mcp',
+  icons: [
+    {
+      src: 'https://raw.githubusercontent.com/adamVass/pylos-mcp/main/icon.png',
+      mimeType: 'image/png',
+      sizes: ['512x512'],
+    },
+  ],
+}
 
 /**
  * A capability that is off has its tools NEVER REGISTERED: they are absent from
@@ -22,7 +36,7 @@ const SERVER_VERSION = (JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { v
  * it cannot be argued into attempting.
  */
 export function buildServer(cfg: Config, core: CoreApi): McpServer {
-  const server = new McpServer({ name: 'pylos-mcp', version: SERVER_VERSION })
+  const server = new McpServer(SERVER_INFO)
 
   registerReadTools(server, cfg, core)
   if (cfg.capabilities.has('drafts')) registerDraftTools(server, cfg, core)
