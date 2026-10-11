@@ -21,6 +21,8 @@ import {
   partFilename,
   type MessagePart,
 } from './parts.js'
+import { trustedDmarcFailed } from './auth-results.js'
+import { MAX_HEADER_BYTES } from './headers.js'
 
 interface BodyText {
   text: string
@@ -41,6 +43,7 @@ export async function getEmail(
   folder: string,
   uid: number,
   maxBodyKb: number,
+  authservIds: readonly string[] = [],
 ): Promise<RenderableEmail> {
   return session.withMailbox(folder, async (client) => {
     const message = await fetchMessage(client, uid)
@@ -77,6 +80,7 @@ export async function getEmail(
         bodyPart?.node.type === 'text/html' ||
         (bodyPart?.node.type === 'text/plain' && isHtmlDocument(body.text, body.cutShort)),
       attachments: parts.filter((part) => isListed(part, structuralBody)).map(toAttachment),
+      dmarcFailed: trustedDmarcFailed(message.headers ?? Buffer.alloc(0), authservIds),
     }
   })
 }
@@ -196,7 +200,14 @@ function enforceDeclaredSizeCap(part: MessagePart, maxAttachmentMb: number): voi
 async function fetchMessage(client: ImapFlow, uid: number): Promise<FetchMessageObject> {
   const message = await client.fetchOne(
     String(uid),
-    { envelope: true, bodyStructure: true, flags: true, size: true, internalDate: true },
+    {
+      envelope: true,
+      bodyStructure: true,
+      flags: true,
+      size: true,
+      internalDate: true,
+      bodyParts: [{ key: 'header', maxLength: MAX_HEADER_BYTES }],
+    },
     { uid: true },
   )
   if (!message) throw new ToolError('not_found', MESSAGE_GONE)

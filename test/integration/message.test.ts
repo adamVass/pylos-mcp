@@ -60,6 +60,7 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
   let uidHtmlAsPlain = 0
   let uidForwarded = 0
   let uidSplit = 0
+  let uidDmarcFail = 0
 
   beforeAll(async () => {
     if (!process.env.RUN_INTEGRATION) return
@@ -159,6 +160,13 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
       ],
     })
 
+    const dmarcFail = await build({
+      ...common,
+      subject: 'dmarc fail fixture',
+      text: 'body',
+      headers: { 'Authentication-Results': 'incoming_mbo; dmarc=fail header.from=x.example' },
+    })
+
     uidMultipart = await appendFixture(seeder, multipart)
     uidHtmlOnly = await appendFixture(seeder, htmlOnly)
     uidBig = await appendFixture(seeder, big)
@@ -168,6 +176,7 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
     uidHtmlAsPlain = await appendFixture(seeder, htmlAsPlain)
     uidForwarded = await appendFixture(seeder, forwarded)
     uidSplit = await appendFixture(seeder, split)
+    uidDmarcFail = await appendFixture(seeder, dmarcFail)
 
     session = new ImapSession(testConfig())
   }, 120_000)
@@ -215,6 +224,12 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
     expect(readUntrusted(email.subject)).toBe('multipart fixture')
     expect(readUntrusted(email.from)).toBe(SENDER)
     for (const recipient of RECIPIENTS) expect(readUntrusted(email.to)).toContain(recipient)
+  })
+
+  itIntegration('reads the trusted DMARC verdict from the stored headers', async () => {
+    expect((await getEmail(session, FOLDER, uidDmarcFail, 64, ['incoming_mbo'])).dmarcFailed).toBe(true)
+    expect((await getEmail(session, FOLDER, uidDmarcFail, 64, ['mx.google.com'])).dmarcFailed).toBe(false)
+    expect((await getEmail(session, FOLDER, uidMultipart, 64, ['incoming_mbo'])).dmarcFailed).toBe(false)
   })
 
   itIntegration('falls back to HTML body and flags it', async () => {

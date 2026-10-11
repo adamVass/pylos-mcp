@@ -25,6 +25,7 @@ export interface Config {
   sendSaveCopy: boolean
   draftsNoRecipients: boolean
   tlsCaFile?: string
+  authservIds: string[] // lowercase, compared and never interpreted
   detect: DetectOptions
 }
 
@@ -35,19 +36,74 @@ interface Preset {
   smtpHost: string
   smtpPort: number
   auth: 'password' | 'microsoft'
+  authservIds: string[]
 }
 
 // every preset speaks implicit TLS on 993
 const PRESETS: ReadonlyMap<string, Preset> = new Map([
-  ['mailbox.org', { imapHost: 'imap.mailbox.org', smtpHost: 'smtp.mailbox.org', smtpPort: 465, auth: 'password' }],
-  ['fastmail', { imapHost: 'imap.fastmail.com', smtpHost: 'smtp.fastmail.com', smtpPort: 465, auth: 'password' }],
-  ['gmail', { imapHost: 'imap.gmail.com', smtpHost: 'smtp.gmail.com', smtpPort: 465, auth: 'password' }],
-  ['yahoo', { imapHost: 'imap.mail.yahoo.com', smtpHost: 'smtp.mail.yahoo.com', smtpPort: 465, auth: 'password' }],
-  ['icloud', { imapHost: 'imap.mail.me.com', smtpHost: 'smtp.mail.me.com', smtpPort: 465, auth: 'password' }],
-  ['gmx', { imapHost: 'imap.gmx.net', smtpHost: 'mail.gmx.net', smtpPort: 465, auth: 'password' }],
-  ['posteo', { imapHost: 'posteo.de', smtpHost: 'posteo.de', smtpPort: 465, auth: 'password' }],
+  [
+    'mailbox.org',
+    {
+      imapHost: 'imap.mailbox.org',
+      smtpHost: 'smtp.mailbox.org',
+      smtpPort: 465,
+      auth: 'password',
+      authservIds: ['incoming_mbo'],
+    },
+  ],
+  [
+    'fastmail',
+    {
+      imapHost: 'imap.fastmail.com',
+      smtpHost: 'smtp.fastmail.com',
+      smtpPort: 465,
+      auth: 'password',
+      authservIds: ['.messagingengine.com'],
+    },
+  ],
+  [
+    'gmail',
+    {
+      imapHost: 'imap.gmail.com',
+      smtpHost: 'smtp.gmail.com',
+      smtpPort: 465,
+      auth: 'password',
+      authservIds: ['mx.google.com'],
+    },
+  ],
+  [
+    'yahoo',
+    {
+      imapHost: 'imap.mail.yahoo.com',
+      smtpHost: 'smtp.mail.yahoo.com',
+      smtpPort: 465,
+      auth: 'password',
+      authservIds: [],
+    },
+  ],
+  [
+    'icloud',
+    { imapHost: 'imap.mail.me.com', smtpHost: 'smtp.mail.me.com', smtpPort: 465, auth: 'password', authservIds: [] },
+  ],
+  [
+    'gmx',
+    { imapHost: 'imap.gmx.net', smtpHost: 'mail.gmx.net', smtpPort: 465, auth: 'password', authservIds: ['gmx.net'] },
+  ],
+  [
+    'posteo',
+    { imapHost: 'posteo.de', smtpHost: 'posteo.de', smtpPort: 465, auth: 'password', authservIds: ['posteo.de'] },
+  ],
   // Microsoft submits only over STARTTLS, which transport() fails closed on
-  ['outlook', { imapHost: 'outlook.office365.com', smtpHost: 'smtp.office365.com', smtpPort: 587, auth: 'microsoft' }],
+  [
+    'outlook',
+    {
+      imapHost: 'outlook.office365.com',
+      smtpHost: 'smtp.office365.com',
+      smtpPort: 587,
+      auth: 'microsoft',
+      authservIds: ['mx.microsoft.com'],
+    },
+  ],
 ])
 
 /** pylos-mcp's own public client registration. Not a secret: a public client has none. */
@@ -267,6 +323,7 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
   const encodedBlobs = booleanEnv('FLAG_ENCODED_BLOBS', env.FLAG_ENCODED_BLOBS, true)
   const senderMismatch = booleanEnv('FLAG_SENDER_MISMATCH', env.FLAG_SENDER_MISMATCH, true)
   const mixedScript = booleanEnv('FLAG_MIXED_SCRIPT', env.FLAG_MIXED_SCRIPT, true)
+  const dmarcFail = booleanEnv('FLAG_DMARC_FAIL', env.FLAG_DMARC_FAIL, true)
   const stripHiddenText = booleanEnv('STRIP_HIDDEN_TEXT', env.STRIP_HIDDEN_TEXT, false)
 
   // pipes, not commas: a phrase may contain a comma, and phrases are the whole
@@ -294,6 +351,16 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
     }
   }
 
+  const configuredIds = (env.AUTHSERV_ID ?? '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+  const authservIds = configuredIds.length > 0 ? configuredIds : (preset?.authservIds ?? [])
+  const badId = authservIds.find((id) => !/^\.?[a-z0-9][a-z0-9_.-]*$/.test(id))
+  if (badId !== undefined) {
+    throw new ConfigError(`AUTHSERV_ID entry "${badId}" is not a server name, or a .domain suffix`)
+  }
+
   return {
     user,
     password,
@@ -310,12 +377,14 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
     sendSaveCopy,
     draftsNoRecipients,
     tlsCaFile,
+    authservIds,
     detect: {
       hiddenText,
       instructionPatterns,
       encodedBlobs,
       senderMismatch,
       mixedScript,
+      dmarcFail,
       stripHiddenText,
       extraPatterns,
     },

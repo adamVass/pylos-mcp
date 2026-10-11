@@ -71,7 +71,7 @@ Fencing reduces prompt-injection risk, nothing eliminates it. The model still re
 
 ## Suspicion warnings
 
-The server also tells the assistant what is suspicious about a message. Five detectors annotate `get_email` results with a line above the content, written entirely in the server's own words and never quoting the content that tripped them. The image above shows all five firing on one message.
+The server also tells the assistant what is suspicious about a message. Six detectors annotate `get_email` results with a line above the content, written entirely in the server's own words and never quoting the content that tripped them. The image above shows the first five firing on one message.
 
 ```
 Warnings: hidden_text (412 hidden characters via display:none), encoded_blob (base64 run of 600 characters)
@@ -82,6 +82,7 @@ Warnings: hidden_text (412 hidden characters via display:none), encoded_blob (ba
 - **Encoded blobs.** Long contiguous base64 or hex runs in the body, reported with their length and never decoded.
 - **Sender mismatch.** A Reply-To address on a different domain than the From address, or a From display name carrying an address on a domain the real sender does not use. Subdomains count as the same domain, so a provider replying from one of its own stays quiet. The Reply-To address itself is shown inside the fenced content, so the model can see where a reply would actually go.
 - **Mixed scripts.** Words that mix Latin letters with Cyrillic or Greek letters drawn to look like Latin ones, such as a "paypal" spelled with a Cyrillic а. Only lookalike letters count, so units like `μm` and ordinary Russian or Greek text stay quiet.
+- **DMARC failure.** Your mail server checks whether a message really comes from the domain in its From line and writes the result into the message's headers. When that check failed, `dmarc_fail` says so. Only a header carrying your provider's own server name counts, and the topmost one with a DMARC result wins, since your provider adds its header above anything the sender wrote. The presets know that name for Gmail, Outlook and Microsoft 365, mailbox.org, GMX, Posteo and Fastmail. Elsewhere, set `AUTHSERV_ID` to the name at the start of the `Authentication-Results` header in one of your own messages.
 
 Warnings annotate, they never withhold. The message always comes back, and each detector has its own toggle in the reference below.
 
@@ -159,6 +160,8 @@ All configuration is environment variables, validated at startup. Invalid config
 | `FLAG_ENCODED_BLOBS` | `true` | Warn on long contiguous base64 or hex runs in the body. |
 | `FLAG_SENDER_MISMATCH` | `true` | Warn when a Reply-To address sits on a different domain than the From address, or the From display name carries an address on another domain. |
 | `FLAG_MIXED_SCRIPT` | `true` | Warn when a word mixes Latin letters with Cyrillic or Greek lookalikes. |
+| `FLAG_DMARC_FAIL` | `true` | Warn when your own mail server's DMARC check failed. |
+| `AUTHSERV_ID` | preset | Comma-separated server names that start your provider's `Authentication-Results` headers, replacing the preset's. An entry starting with a dot matches any name ending in it. With none, `dmarc_fail` never fires. |
 | `STRIP_HIDDEN_TEXT` | `false` | Drop detected hidden text from the body instead of only warning, with a note of how much was dropped. Requires `FLAG_HIDDEN_TEXT` to stay on, the combination with the detector off is refused at startup. |
 | `FLAG_EXTRA_PATTERNS` | none | Pipe-separated phrases added to the instruction-pattern set, matched as case-insensitive literal substrings. |
 | `TLS_CA_FILE` | none | Path to a PEM CA certificate added as an extra trust anchor, for self-hosted servers with a private CA. Certificate verification cannot be turned off, this only extends what is trusted. Setting it trusts Node's bundled root store plus this file, which means anchors added through `NODE_EXTRA_CA_CERTS` are not in that set. If you rely on those, point `TLS_CA_FILE` at the same certificate. |

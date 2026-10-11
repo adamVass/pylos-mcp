@@ -115,9 +115,23 @@ describe('loadConfig', () => {
       encodedBlobs: true,
       senderMismatch: true,
       mixedScript: true,
+      dmarcFail: true,
       stripHiddenText: false,
       extraPatterns: [],
     })
+  })
+  it('presets name their receiving server, and AUTHSERV_ID replaces the list', () => {
+    expect(loadConfig(BASE).authservIds).toEqual(['incoming_mbo'])
+    expect(loadConfig({ ...BASE, PROVIDER: 'fastmail' }).authservIds).toEqual(['.messagingengine.com'])
+    expect(loadConfig({ ...BASE, PROVIDER: 'icloud' }).authservIds).toEqual([])
+    expect(loadConfig({ ...BASE, AUTHSERV_ID: ' MX.Example.org , .relay.example ' }).authservIds).toEqual([
+      'mx.example.org',
+      '.relay.example',
+    ])
+    expect(loadConfig({ ...BASE, AUTHSERV_ID: ' , ' }).authservIds).toEqual(['incoming_mbo'])
+    expect(() => loadConfig({ ...BASE, AUTHSERV_ID: '.' })).toThrow(ConfigError)
+    expect(() => loadConfig({ ...BASE, AUTHSERV_ID: 'mx example' })).toThrow(ConfigError)
+    expect(loadConfig({ ...BASE, FLAG_DMARC_FAIL: 'false' }).detect.dmarcFail).toBe(false)
   })
   it('FLAG_EXTRA_PATTERNS splits on pipes, trims, lowercases and drops empties', () => {
     const cfg = loadConfig({ ...BASE, FLAG_EXTRA_PATTERNS: ' Reply Only In Base64 | | do the secret step ' })

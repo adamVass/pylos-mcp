@@ -7,7 +7,7 @@ import { DomUtils, parseDocument } from 'htmlparser2'
 import { DEPTH_OMITTED, MAX_HTML_DEPTH, stripInvisible } from './html.js'
 
 export interface ContentFlag {
-  detector: 'hidden_text' | 'instruction_patterns' | 'encoded_blob' | 'sender_mismatch' | 'mixed_script'
+  detector: 'hidden_text' | 'instruction_patterns' | 'encoded_blob' | 'sender_mismatch' | 'mixed_script' | 'dmarc_fail'
   note: string
 }
 
@@ -17,6 +17,7 @@ export interface DetectOptions {
   encodedBlobs: boolean
   senderMismatch: boolean
   mixedScript: boolean
+  dmarcFail: boolean
   stripHiddenText: boolean
   extraPatterns: string[] // lowercased literal phrases
 }
@@ -312,6 +313,14 @@ function spoofedWords(text: string): number {
     }
   }
   return count
+}
+
+export function detectDmarc(failed: boolean, opts: DetectOptions): ContentFlag | undefined {
+  if (!failed || !opts.dmarcFail) return undefined
+  return {
+    detector: 'dmarc_fail',
+    note: 'your mail server could not confirm the message comes from the domain in From',
+  }
 }
 
 export type RegionName = 'From' | 'subject' | 'body' | 'attachment names'

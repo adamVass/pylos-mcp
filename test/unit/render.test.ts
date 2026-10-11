@@ -25,6 +25,7 @@ const DETECT_OFF: DetectOptions = {
   encodedBlobs: false,
   senderMismatch: false,
   mixedScript: false,
+  dmarcFail: false,
   stripHiddenText: false,
   extraPatterns: [],
 }
@@ -637,4 +638,13 @@ it('markup escaped inside a raw-text element cannot replace the message body', (
   const html = '<p>real message</p><xmp>&lt;body&gt;substituted message&lt;/body&gt;</xmp>'
   const out = renderEmail(email({ body: makeUntrusted(html), bodyIsHtml: true }), 64, DETECT_ON)
   expect(out).toContain('real message')
+})
+
+it('dmarc_fail is the server reporting its own check, and its toggle silences it', () => {
+  const out = renderEmail(email({ dmarcFailed: true }), 64, { ...DETECT_OFF, dmarcFail: true })
+  expect(out).toContain(
+    'Warnings: dmarc_fail (your mail server could not confirm the message comes from the domain in From)',
+  )
+  expect(renderEmail(email({ dmarcFailed: true }), 64, DETECT_OFF)).not.toContain('Warnings:')
+  expect(renderEmail(email(), 64, { ...DETECT_OFF, dmarcFail: true })).not.toContain('Warnings:')
 })

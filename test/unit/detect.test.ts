@@ -18,6 +18,7 @@ const ALL_ON: DetectOptions = {
   encodedBlobs: true,
   senderMismatch: true,
   mixedScript: true,
+  dmarcFail: true,
   stripHiddenText: false,
   extraPatterns: [],
 }

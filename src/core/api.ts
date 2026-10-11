@@ -33,7 +33,7 @@ export function makeCoreApi(cfg: Config, session: ImapSession): CoreApi {
 
   return {
     searchEmails: (args) => searchEmails(session, args),
-    getEmail: (folder, uid) => getEmail(session, folder, uid, cfg.maxBodyKb),
+    getEmail: (folder, uid) => getEmail(session, folder, uid, cfg.maxBodyKb, cfg.authservIds),
     getAttachment: (folder, uid, partId) => getAttachment(session, cfg, folder, uid, partId),
     listFolders: () => listFolders(session),
     // Unreachable in principle, since a tool that was never registered cannot be

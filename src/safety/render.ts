@@ -20,6 +20,7 @@ import {
   type ContentFlag,
   type DetectOptions,
   type TextRegion,
+  detectDmarc,
   detectSender,
   detectText,
   inspectHtml,
@@ -58,6 +59,8 @@ export interface RenderableEmail {
   bodyCutShort: boolean
   bodyIsHtml: boolean
   attachments: { partId: string; filename: UntrustedText; sizeBytes: number; contentType: string; encoding?: string }[]
+  /** the receiving server's own DMARC check failed, never the sender's claim */
+  dmarcFailed?: boolean
 }
 
 export interface RenderableSummary {
@@ -186,6 +189,8 @@ export function renderEmail(e: RenderableEmail, maxBodyKb: number, detect: Detec
     detect,
   )
   if (senderFlag !== undefined) flags.push(senderFlag)
+  const dmarcFlag = detectDmarc(e.dmarcFailed === true, detect)
+  if (dmarcFlag !== undefined) flags.push(dmarcFlag)
 
   // hidden_text inspects the HTML because its markers live in markup that
   // flattening erases. The text detectors run last, on exactly the text the model
