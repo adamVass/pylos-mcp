@@ -34,6 +34,14 @@ Anyone in the world can put text in your inbox, and the moment an AI assistant r
 - **Reads and drafts by default.** Moving, sending and deleting stay off until you turn them on, sending only reaches addresses you list, and there is no `bcc` anywhere.
 - **Runs on your machine, with your provider.** Gmail, Outlook and Microsoft 365, iCloud, Yahoo, GMX, Fastmail, mailbox.org, Posteo, Proton through Bridge, or a server of your own.
 
+## The lethal trifecta
+
+Simon Willison calls it [the lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/): an AI agent with access to private data, exposure to untrusted content and the ability to communicate externally. An assistant reading your email has the first two by design, because your inbox is private and anyone can write to it. Stealing what it read takes the third, a way to send it somewhere else.
+
+By default, pylos-mcp offers no such way. The assistant can read and save drafts, and a draft waits in your Drafts folder until you send it yourself. Once you turn sending on, it reaches only the addresses and domains you list. In any configuration, no tool attaches a file from your disk or adds a forwarding rule. The fence and the warnings help the model notice an attack, and the defaults narrow what a misled model can do.
+
+The third leg can still come from elsewhere in the same client, such as a tool that fetches web pages or runs shell commands. Image markup inside a message is neutralized, but the model can still write an image link of its own, which a client that loads images would fetch. When the assistant reads your mail, keep tools that reach the internet out of that conversation.
+
 ## Quick start
 
 pylos-mcp runs locally through `npx` and needs Node.js 22 or later. Every route below starts from example values, so replace the address and password with your own. Use an app password, not your account's regular password, and for Outlook no password at all. [Provider setup](#provider-setup) says where to get one.
