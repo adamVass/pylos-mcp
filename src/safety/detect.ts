@@ -323,46 +323,44 @@ export function detectDmarc(failed: boolean, opts: DetectOptions): ContentFlag |
   }
 }
 
-export type RegionName = 'From' | 'subject' | 'body' | 'attachment names'
+type RegionName = 'From' | 'subject' | 'body' | 'attachment names'
 
 export interface TextRegion {
   name: RegionName
   text: string
 }
 
+function tally(regions: TextRegion[], count: (text: string) => number): { total: number; where: RegionName[] } {
+  let total = 0
+  const where: RegionName[] = []
+  for (const region of regions) {
+    const n = count(region.text)
+    if (n === 0) continue
+    total += n
+    where.push(region.name)
+  }
+  return { total, where }
+}
+
 export function detectText(regions: TextRegion[], opts: DetectOptions): ContentFlag[] {
   const flags: ContentFlag[] = []
 
   if (opts.instructionPatterns) {
-    let matched = 0
-    const where: RegionName[] = []
-    for (const region of regions) {
-      const n = matchedPatterns(region.text, opts.extraPatterns)
-      if (n === 0) continue
-      matched += n
-      where.push(region.name)
-    }
-    if (matched > 0) {
+    const { total, where } = tally(regions, (text) => matchedPatterns(text, opts.extraPatterns))
+    if (total > 0) {
       flags.push({
         detector: 'instruction_patterns',
-        note: `${matched} instruction-like phrase${matched === 1 ? '' : 's'} matched in ${where.join(', ')}`,
+        note: `${total} instruction-like phrase${total === 1 ? '' : 's'} matched in ${where.join(', ')}`,
       })
     }
   }
 
   if (opts.mixedScript) {
-    let words = 0
-    const where: RegionName[] = []
-    for (const region of regions) {
-      const n = spoofedWords(region.text)
-      if (n === 0) continue
-      words += n
-      where.push(region.name)
-    }
-    if (words > 0) {
+    const { total, where } = tally(regions, spoofedWords)
+    if (total > 0) {
       flags.push({
         detector: 'mixed_script',
-        note: `${words} word${words === 1 ? '' : 's'} mixing Latin with lookalike Cyrillic or Greek letters in ${where.join(', ')}`,
+        note: `${total} word${total === 1 ? '' : 's'} mixing Latin with lookalike Cyrillic or Greek letters in ${where.join(', ')}`,
       })
     }
   }

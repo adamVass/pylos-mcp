@@ -1,12 +1,11 @@
 // imapflow cannot fetch one header field partially, so the whole block is capped
 // instead: a sender can make References megabytes long, and 64 kB clears the 10
 // to 20 kB of ARC, DKIM and relay headers real mail carries ahead of it
-export const MAX_HEADER_BYTES = 65_536
+const MAX_HEADER_BYTES = 65_536
 
 /** a fetch part for the capped header block, peeked so nothing is marked read */
 export const HEADER_PART = { key: 'header', maxLength: MAX_HEADER_BYTES }
 
-/** every occurrence of a header, unfolded, in block order */
 export function headerValues(block: Buffer, name: string): string[] {
   const prefix = `${name.toLowerCase()}:`
   const unfolded = new TextDecoder('utf-8', { fatal: false }).decode(block).replace(/\r?\n[ \t]/g, ' ')

@@ -1,16 +1,14 @@
-// The only module in this server that transmits mail. Three gates stand between
-// a tool call and a message leaving: the allowlist, the session cap, and the
-// absence of any recipient field beyond To and Cc. All are checked before a
-// socket is opened.
+// The only module in this server that transmits mail.
 
 import { createTransport } from 'nodemailer'
 import { passwordOf, type Config } from '../config.js'
 import { APP_PASSWORD_ADVICE, TLS_CA_ADVICE, ToolError, errorCode } from '../errors.js'
 import type { SentCopy } from '../safety/render.js'
 import type { ImapSession } from './client.js'
-import { collectAttachments, composeMessage, type ComposeBudget, type PartRef } from './draft.js'
+import { checkAllowlist } from './address.js'
+import { composeFromArgs, type ComposeBudget, type PartRef } from './draft.js'
 import { markAnswered } from './mailbox-ops.js'
-import { readReplyHeaders, type ReplyRef } from './reply.js'
+import type { ReplyRef } from './reply.js'
 import { secureOptions } from './tls.js'
 
 /**
@@ -22,34 +20,6 @@ import { secureOptions } from './tls.js'
 export class SendState {
   sent = 0
   inFlight = 0
-}
-
-export function checkAllowlist(recipients: string[], allowlist: string[]): string[] {
-  return recipients.filter((recipient) => !isAllowed(recipient.toLowerCase(), allowlist))
-}
-
-/** the shapes isAllowed can match, checked at startup so no entry silently matches nobody */
-export function isAllowlistEntry(entry: string): boolean {
-  return entry === '*' || /^(\*|[^\s*]+)@[^\s@*]+$/.test(entry)
-}
-
-/**
- * `*` alone is the config token that visibly turns the safeguard off.
- * `*@domain` compares the part after the LAST `@` for exact equality, not a
- * suffix: `corp.example` must not admit `subcorp.example`, and a quoted local
- * part may legally contain an `@`, so `"a@corp.example"@evil.example` is an
- * evil.example address.
- */
-function isAllowed(recipient: string, allowlist: string[]): boolean {
-  const at = recipient.lastIndexOf('@')
-  const domain = at === -1 ? null : recipient.slice(at + 1)
-
-  return allowlist.some((entry) => {
-    const pattern = entry.toLowerCase()
-    if (pattern === '*') return true
-    if (!pattern.startsWith('*@')) return pattern === recipient
-    return domain !== null && domain === pattern.slice(2)
-  })
 }
 
 export interface SendArgs {
@@ -118,24 +88,11 @@ export async function sendEmail(
   try {
     const reserved = await (async () => {
       try {
-        // the allowlist and cap settled before any IMAP work, and no relay socket opens before this read
-        const thread = args.inReplyTo ? await readReplyHeaders(session, args.inReplyTo) : undefined
-
-        // fetched before the message is composed, because a message that went out
-        // without one of its attachments cannot be recalled
-        const collected = await collectAttachments(session, cfg, args.attachments ?? [], budget)
-        release = collected.release
-
-        // Composed once, transmitted and filed as the same bytes: the copy in Sent
-        // is exactly what recipients received, Message-ID included.
-        const message = await composeMessage(cfg, {
-          ...thread,
-          to: args.to,
-          cc: args.cc,
-          subject: args.subject,
-          body: args.body,
-          attachments: collected.attachments,
-        })
+        // the allowlist and cap settled before any IMAP work, and no relay socket opens before this
+        const composed = await composeFromArgs(session, cfg, args, budget)
+        release = composed.release
+        // transmitted and filed as the same bytes, so the Sent copy is exactly what recipients received, Message-ID included
+        const { message } = composed
 
         // fetched before the relay call that sendFailure wraps, so a sign-in request reaches the caller as written
         const auth = session.tokens

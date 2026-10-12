@@ -157,8 +157,6 @@ async function readScript(conn: SieveConnection, name: string, maxBodyKb: number
   }
 }
 
-// --- protocol grammar --------------------------------------------------------
-
 function isOk(line: string): boolean {
   return /^OK(\s|$)/.test(line)
 }
@@ -194,8 +192,6 @@ function parseQuoted(line: string): { value: string; rest: string } | null {
   }
   return null
 }
-
-// --- the connection ----------------------------------------------------------
 
 /** the protocol is strictly turn-taking, so a single wakeup slot is enough */
 class SieveConnection {
@@ -270,7 +266,6 @@ class SieveConnection {
     throw this.unparseable()
   }
 
-  /** Capability lines are `"NAME"` optionally followed by a value, terminated by OK. */
   async readCapabilities(): Promise<Set<string>> {
     const capabilities = new Set<string>()
 

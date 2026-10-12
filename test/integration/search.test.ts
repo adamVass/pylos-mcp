@@ -4,9 +4,8 @@ import { ImapSession } from '../../src/core/client.js'
 import { searchEmails } from '../../src/core/search.js'
 import { readUntrusted } from '../../src/safety/untrusted.js'
 import type { RenderableSummary } from '../../src/safety/render.js'
-import { itIntegration, seedClient, testConfig } from './helpers.js'
+import { itIntegration, rawMessage, seedClient, SENDER, testConfig } from './helpers.js'
 
-const SENDER = 'Sender Name <sender@x.example>'
 const RECIPIENT = 'tester@x.example'
 const SUBJECTS = Array.from({ length: 12 }, (_, i) => `msg-${String(i + 1).padStart(2, '0')}`)
 const NEEDLE_SUBJECTS = new Set(['msg-03', 'msg-07', 'msg-11'])
@@ -21,22 +20,6 @@ function headerDate(index: number): Date {
   return new Date(Date.UTC(2026, 6, 12 - index))
 }
 
-function rfc822(subject: string, date: Date, body: string): Buffer {
-  return Buffer.from(
-    [
-      `From: ${SENDER}`,
-      `To: ${RECIPIENT}`,
-      `Subject: ${subject}`,
-      `Date: ${date.toUTCString().replace('GMT', '+0000')}`,
-      'MIME-Version: 1.0',
-      'Content-Type: text/plain; charset=utf-8',
-      '',
-      body,
-      '',
-    ].join('\r\n'),
-  )
-}
-
 function subjectsOf(items: RenderableSummary[]): string[] {
   return items.map((item) => readUntrusted(item.subject))
 }
@@ -48,9 +31,7 @@ describe('searchEmails against a local Dovecot container', () => {
   beforeAll(async () => {
     if (!process.env.RUN_INTEGRATION) return
 
-    seeder = seedClient()
-    seeder.on('error', () => {})
-    await seeder.connect()
+    seeder = await seedClient()
 
     // the counts asserted below are absolute, so fail loudly rather than as a
     // count mismatch if something else has already put mail in either folder
@@ -63,9 +44,12 @@ describe('searchEmails against a local Dovecot container', () => {
 
     for (const [index, subject] of SUBJECTS.entries()) {
       const body = NEEDLE_SUBJECTS.has(subject) ? 'this body contains a needle' : 'nothing to see here'
-      await seeder.append('INBOX', rfc822(subject, headerDate(index), body), [])
+      await seeder.append('INBOX', rawMessage({ subject, date: headerDate(index), body }), [])
     }
-    await seeder.append('Drafts', rfc822('draft-01', headerDate(0), 'a draft'), ['\\Seen', '\\Flagged'])
+    await seeder.append('Drafts', rawMessage({ subject: 'draft-01', date: headerDate(0), body: 'a draft' }), [
+      '\\Seen',
+      '\\Flagged',
+    ])
 
     session = new ImapSession(testConfig())
   }, 60_000)
@@ -75,21 +59,20 @@ describe('searchEmails against a local Dovecot container', () => {
     await seeder?.logout().catch(() => undefined)
   })
 
-  itIntegration('C-1 regression: returns the NEWEST messages first, then paginates', async () => {
-    const { total, items } = await searchEmails(session, { limit: 5, offset: 0 })
-    expect(total).toBe(12)
-    expect(subjectsOf(items)).toEqual(['msg-12', 'msg-11', 'msg-10', 'msg-09', 'msg-08'])
-  })
+  itIntegration(
+    'C-1 regression: returns the NEWEST messages first, and offset continues without gaps or repeats',
+    async () => {
+      const page1 = await searchEmails(session, { limit: 5, offset: 0 })
+      const page2 = await searchEmails(session, { limit: 5, offset: 5 })
+      const page3 = await searchEmails(session, { limit: 5, offset: 10 })
 
-  itIntegration('offset continues the newest-first ordering without gaps or repeats', async () => {
-    const page1 = await searchEmails(session, { limit: 5, offset: 0 })
-    const page2 = await searchEmails(session, { limit: 5, offset: 5 })
-    const page3 = await searchEmails(session, { limit: 5, offset: 10 })
-
-    expect(subjectsOf(page2.items)).toEqual(['msg-07', 'msg-06', 'msg-05', 'msg-04', 'msg-03'])
-    expect(subjectsOf(page3.items)).toEqual(['msg-02', 'msg-01'])
-    expect(subjectsOf([...page1.items, ...page2.items, ...page3.items])).toEqual([...SUBJECTS].reverse())
-  })
+      expect(page1.total).toBe(12)
+      expect(subjectsOf(page1.items)).toEqual(['msg-12', 'msg-11', 'msg-10', 'msg-09', 'msg-08'])
+      expect(subjectsOf(page2.items)).toEqual(['msg-07', 'msg-06', 'msg-05', 'msg-04', 'msg-03'])
+      expect(subjectsOf(page3.items)).toEqual(['msg-02', 'msg-01'])
+      expect(subjectsOf([...page1.items, ...page2.items, ...page3.items])).toEqual([...SUBJECTS].reverse())
+    },
+  )
 
   itIntegration('an offset past the end reports the total with no items', async () => {
     const { total, items } = await searchEmails(session, { limit: 5, offset: 50 })

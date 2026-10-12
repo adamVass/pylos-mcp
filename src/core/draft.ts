@@ -4,7 +4,13 @@ import type { Config } from '../config.js'
 import type { ImapSession } from './client.js'
 import { ToolError } from '../errors.js'
 import { readReplyHeaders, type ReplyRef } from './reply.js'
-import { DOWNLOAD_CHUNK_BYTES, capBytes, capExceededMidTransfer, resolvePartForDownload } from './message.js'
+import {
+  DOWNLOAD_CHUNK_BYTES,
+  capBytes,
+  capExceededMidTransfer,
+  downloadPart,
+  resolvePartForDownload,
+} from './message.js'
 import { downloadName } from './parts.js'
 
 export interface PartRef {
@@ -90,20 +96,8 @@ export async function createDraft(
     throw new ToolError('policy', 'drafts are configured to carry no recipients (DRAFTS_NO_RECIPIENTS=true)')
   }
 
-  // read before any attachment is fetched, so an unknown original costs no download
-  const thread = args.inReplyTo ? await readReplyHeaders(session, args.inReplyTo) : undefined
-
-  const { attachments, release } = await collectAttachments(session, cfg, args.attachments ?? [], budget)
+  const { message, release } = await composeFromArgs(session, cfg, args, budget)
   try {
-    const message = await composeMessage(cfg, {
-      ...thread,
-      to: args.to,
-      cc: args.cc,
-      subject: args.subject,
-      body: args.body,
-      attachments,
-    })
-
     const folder = await session.specialUse('\\Drafts', 'Drafts')
 
     // Selected, not merely connected: imapflow drops any APPEND flag the SELECTED
@@ -130,12 +124,41 @@ export async function createDraft(
 }
 
 /**
+ * The reply headers are read before any attachment is fetched, so an unknown
+ * original costs no download. Attachments are fetched before composing, because
+ * a message that went out without one of them cannot be recalled.
+ */
+export async function composeFromArgs(
+  session: ImapSession,
+  cfg: Config,
+  args: DraftArgs,
+  budget: ComposeBudget,
+): Promise<{ message: Buffer; release: () => void }> {
+  const thread = args.inReplyTo ? await readReplyHeaders(session, args.inReplyTo) : undefined
+  const { attachments, release } = await collectAttachments(session, cfg, args.attachments ?? [], budget)
+  try {
+    const message = await composeMessage(cfg, {
+      ...thread,
+      to: args.to,
+      cc: args.cc,
+      subject: args.subject,
+      body: args.body,
+      attachments,
+    })
+    return { message, release }
+  } catch (err) {
+    release()
+    throw err
+  }
+}
+
+/**
  * Without the two disable flags, a `path` or `href` reaching an attachment
  * object would turn composing into a local-file read and an outbound HTTP
  * request. Nothing in either caller sets those fields today, so this is the
  * single lock that survives someone later adding one.
  */
-export async function composeMessage(
+async function composeMessage(
   cfg: Config,
   message: {
     to?: string[]
@@ -192,10 +215,7 @@ async function fetchPart(session: ImapSession, cfg: Config, ref: PartRef, claim:
     const declared = part.node.size ?? 0
     claim.take(declared)
 
-    const download = await client.download(String(ref.uid), part.id, { uid: true, chunkSize: DOWNLOAD_CHUNK_BYTES })
-    // a message expunged between the FETCH and this DOWNLOAD yields an object with
-    // no stream rather than an error
-    if (!download?.content) throw new ToolError('not_found', SOURCE_GONE)
+    const download = await downloadPart(client, ref.uid, part.id, { chunkSize: DOWNLOAD_CHUNK_BYTES }, SOURCE_GONE)
 
     return {
       filename: downloadName(part.node),

@@ -1,13 +1,12 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import type { Config } from '../../config.js'
 import type { CoreApi } from '../../core/api.js'
 import { ToolError } from '../../errors.js'
 import { renderFlagsUpdated, renderMoved } from '../../safety/render.js'
 import { run } from '../run.js'
 import { folder, uid } from './bounds.js'
 
-export function registerManageTools(server: McpServer, _cfg: Config, core: CoreApi): void {
+export function registerManageTools(server: McpServer, core: CoreApi): void {
   server.registerTool(
     'move_email',
     {

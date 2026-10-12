@@ -7,7 +7,7 @@ export interface ReplyRef {
   uid: number
 }
 
-export interface ReplyHeaders {
+interface ReplyHeaders {
   inReplyTo: string
   references: string[]
 }

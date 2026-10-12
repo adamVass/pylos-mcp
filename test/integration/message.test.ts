@@ -9,31 +9,25 @@ import { ImapSession } from '../../src/core/client.js'
 import { getAttachment, getEmail } from '../../src/core/message.js'
 import { renderEmail } from '../../src/safety/render.js'
 import { readUntrusted } from '../../src/safety/untrusted.js'
-import { build, itIntegration, seedClient, testConfig } from './helpers.js'
+import {
+  BIG_BYTES,
+  build,
+  flagsOf,
+  itIntegration,
+  KNOWN_PDF_BYTES,
+  partIdFor,
+  seedClient,
+  SENDER,
+  testConfig,
+} from './helpers.js'
 
-// the search suite asserts absolute message counts on INBOX and Drafts, so
-// putting fixtures there would break it
 const FOLDER = 'T6Fixtures'
-
-const SENDER = 'Sender Name <sender@x.example>'
 const RECIPIENTS = ['tester@x.example', 'second@x.example']
-
-/**
- * Cycles all 256 byte values rather than repeating one: a transfer that mangles
- * high bytes or translates CRLF produces a buffer of the right length but
- * different content, which a uniform filler would hide.
- */
-const KNOWN_PDF_BYTES = Buffer.from(Array.from({ length: 5000 }, (_, i) => i % 256))
-
-// Big enough that base64 expansion cannot bring the DECLARED size back under
-// the 1 MB cap the download test sets, and far from the boundary either way.
-const BIG_BYTES = Buffer.alloc(1_200_000, 0x42)
 
 const HOSTILE_FILENAME = '../../evil.sh'
 
-// Cyrillic is two bytes per character in UTF-8 and forces MailComposer to
-// base64 the part, which is exactly the case that distinguishes a byte cap
-// applied before decoding from one applied after.
+// Cyrillic is two bytes per character and forces MailComposer to base64 the part, distinguishing a
+// byte cap applied before decoding from one after
 const LONG_BODY = 'д'.repeat(60_000)
 const LONG_BODY_BYTES = Buffer.byteLength(LONG_BODY)
 
@@ -67,9 +61,7 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
 
     downloadDir = await mkdtemp(join(tmpdir(), 'pylos-t6-'))
 
-    seeder = seedClient()
-    seeder.on('error', () => {})
-    await seeder.connect()
+    seeder = await seedClient()
 
     // tolerate ALREADYEXISTS, then insist the folder is empty so the UID and
     // count assumptions below cannot silently drift
@@ -187,13 +179,6 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
     if (downloadDir) await rm(downloadDir, { recursive: true, force: true })
   })
 
-  async function partIdFor(uid: number, filename: string): Promise<string> {
-    const email = await getEmail(session, FOLDER, uid, 64)
-    const match = email.attachments.find((a) => readUntrusted(a.filename) === filename)
-    if (!match) throw new Error(`no attachment named ${filename} on uid ${uid}`)
-    return match.partId
-  }
-
   itIntegration('prefers the text/plain part and lists attachments with part ids', async () => {
     const email = await getEmail(session, FOLDER, uidMultipart, 64)
 
@@ -240,10 +225,9 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
     expect(body).toContain('only')
     expect(email.attachments).toEqual([])
 
-    // A singlepart root carries no part id of its own, and imapflow treats an
-    // absent part as "download the whole RFC822 source". That fallback still
-    // satisfies a naive contains-check because the headers repeat the subject,
-    // so pin that the body is the body and not the raw message.
+    // a singlepart root has no part id and imapflow then downloads the whole RFC822 source, which a
+    // naive contains-check still passes because the headers repeat the subject, so pin that the body
+    // is the body
     expect(body).not.toContain('Message-ID:')
     expect(body).not.toContain('MIME-Version:')
     expect(body.trim().startsWith('<p>')).toBe(true)
@@ -252,13 +236,7 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
   itIntegration('reading a message does not mark it \\Seen', async () => {
     await getEmail(session, FOLDER, uidMultipart, 64)
 
-    const lock = await seeder!.getMailboxLock(FOLDER)
-    try {
-      const fetched = await seeder!.fetchOne(String(uidMultipart), { flags: true }, { uid: true })
-      expect(fetched && fetched.flags?.has('\\Seen')).toBe(false)
-    } finally {
-      lock.release()
-    }
+    expect((await flagsOf(seeder!, FOLDER, uidMultipart)).has('\\Seen')).toBe(false)
   })
 
   itIntegration('unknown uid → ToolError not_found', async () => {
@@ -267,7 +245,7 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
 
   itIntegration('downloads an attachment byte-identical, with a sanitized unique name', async () => {
     const cfg = testConfig({ DOWNLOAD_DIR: downloadDir })
-    const pdfPartId = await partIdFor(uidMultipart, 'report.pdf')
+    const pdfPartId = await partIdFor(session, FOLDER, uidMultipart, 'report.pdf')
 
     const result = await getAttachment(session, cfg, FOLDER, uidMultipart, pdfPartId)
 
@@ -280,7 +258,7 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
 
   itIntegration('neutralizes a traversal filename and keeps the file inside the download dir', async () => {
     const cfg = testConfig({ DOWNLOAD_DIR: downloadDir })
-    const hostilePartId = await partIdFor(uidMultipart, HOSTILE_FILENAME)
+    const hostilePartId = await partIdFor(session, FOLDER, uidMultipart, HOSTILE_FILENAME)
 
     const result = await getAttachment(session, cfg, FOLDER, uidMultipart, hostilePartId)
 
@@ -291,7 +269,7 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
 
   itIntegration('a second download of the same attachment does not overwrite the first', async () => {
     const cfg = testConfig({ DOWNLOAD_DIR: downloadDir })
-    const pdfPartId = await partIdFor(uidMultipart, 'report.pdf')
+    const pdfPartId = await partIdFor(session, FOLDER, uidMultipart, 'report.pdf')
 
     const first = await getAttachment(session, cfg, FOLDER, uidMultipart, pdfPartId)
     const second = await getAttachment(session, cfg, FOLDER, uidMultipart, pdfPartId)
@@ -316,7 +294,7 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
   itIntegration('creates a download directory that does not exist yet', async () => {
     const nested = join(downloadDir, 'nested', 'made-on-demand')
     const cfg = testConfig({ DOWNLOAD_DIR: nested })
-    const pdfPartId = await partIdFor(uidMultipart, 'report.pdf')
+    const pdfPartId = await partIdFor(session, FOLDER, uidMultipart, 'report.pdf')
 
     const result = await getAttachment(session, cfg, FOLDER, uidMultipart, pdfPartId)
 
@@ -328,11 +306,8 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
     const email = await getEmail(session, FOLDER, uidLongBody, 64)
     const bodyBytes = Buffer.byteLength(readUntrusted(email.body))
 
-    // The body is base64-encoded on the wire (non-ASCII forces it), so this pins
-    // WHICH octets imapflow's maxBytes counts: the decoded output, not the encoded
-    // ones. Were it counting encoded octets, 65000 base64 chars would yield only
-    // ~48750 bytes of text, landing under the 64 kB the renderer truncates at and
-    // producing a short body with no marker.
+    // the body is base64 on the wire, so this pins that maxBytes counts decoded octets. Counting encoded ones would
+    // yield ~48750 bytes of text from 65000 chars, under the 64 kB truncation point and with no marker
     expect(bodyBytes).toBeGreaterThan(64_000)
     expect(bodyBytes).toBeLessThan(66_000)
     expect(email.bodyCutShort).toBe(true)
@@ -349,13 +324,12 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
 
   itIntegration('declared size over cap → ToolError cap_exceeded BEFORE any download', async () => {
     const cfg = testConfig({ DOWNLOAD_DIR: downloadDir, MAX_ATTACHMENT_MB: '1' })
-    const bigPartId = await partIdFor(uidBig, 'huge.bin')
+    const bigPartId = await partIdFor(session, FOLDER, uidBig, 'huge.bin')
     const filesBefore = readdirSync(downloadDir).sort()
 
-    // The ordering IS the requirement: the cap has to be decided from the declared
-    // bodystructure size, so no byte of the attachment may ever be requested.
-    // Spying on the prototype is the only seam, because ImapSession constructs
-    // its client lazily and privately.
+    // the ordering is the requirement, the cap is decided from the declared bodystructure size so no
+    // byte of the attachment may be requested. Spying on the prototype is the only seam, ImapSession
+    // builds its client lazily and privately
     const spy = vi.spyOn(ImapFlow.prototype, 'download')
     try {
       const error = await getAttachment(session, cfg, FOLDER, uidBig, bigPartId).catch((e: Error) => e)
@@ -372,7 +346,7 @@ describe('getEmail/getAttachment against a local Dovecot container', () => {
 
   itIntegration('an attachment under the cap still downloads when a cap is set', async () => {
     const cfg = testConfig({ DOWNLOAD_DIR: downloadDir, MAX_ATTACHMENT_MB: '1' })
-    const pdfPartId = await partIdFor(uidMultipart, 'report.pdf')
+    const pdfPartId = await partIdFor(session, FOLDER, uidMultipart, 'report.pdf')
 
     const result = await getAttachment(session, cfg, FOLDER, uidMultipart, pdfPartId)
     expect(readFileSync(result.path)).toEqual(KNOWN_PDF_BYTES)

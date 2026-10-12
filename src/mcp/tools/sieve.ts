@@ -4,8 +4,7 @@ import type { Config } from '../../config.js'
 import type { CoreApi } from '../../core/api.js'
 import { renderSieveList, renderSieveScript } from '../../safety/render.js'
 import { run } from '../run.js'
-import { MAX_SIEVE_NAME_CHARS } from './bounds.js'
-import { FENCE_TAG_NOTE } from './read.js'
+import { FENCE_TAG_NOTE, MAX_SIEVE_NAME_CHARS } from './bounds.js'
 
 // ManageSieve is line-oriented and the name is interpolated into a command, so a
 // break would let a script name carry a command of its own
@@ -15,8 +14,7 @@ const scriptName = z
   .max(MAX_SIEVE_NAME_CHARS)
   .refine((name) => !/[\r\n\0]/.test(name), { message: 'a script name cannot contain a line break' })
 
-// the ManageSieve client has no PUTSCRIPT or SETACTIVE path at all, so the hint
-// describes what the code can do rather than promising what it will
+// the client has no PUTSCRIPT or SETACTIVE path, so read-only is a fact, not a promise
 const SIEVE_ANNOTATIONS = { readOnlyHint: true, openWorldHint: false }
 
 export function registerSieveTools(server: McpServer, cfg: Config, core: CoreApi): void {

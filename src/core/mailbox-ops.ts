@@ -65,8 +65,7 @@ export async function moveEmail(session: ImapSession, folder: string, uid: numbe
 /**
  * `\Seen` and `\Flagged` are two separate STORE commands, not one atomic
  * operation: if the first succeeds and the second fails, that first change has
- * already reached the server and cannot be undone from here. storeFlag's error
- * names the flag it was changing so the caller can tell which one failed.
+ * already reached the server and cannot be undone from here.
  */
 export async function setFlags(
   session: ImapSession,

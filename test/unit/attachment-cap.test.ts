@@ -58,8 +58,7 @@ const PART = {
 }
 
 describe('the attachment cap does not trust the declared size', () => {
-  // `size ?? 0` used to make a part with no declared size look like a 0-byte
-  // one, which passes any cap. The download that followed had no bound at all.
+  // a missing declared size must not read as 0 bytes, which passes any cap
   it('refuses a part the server declared no size for, before downloading it', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'pylos-cap-'))
     const { session, download } = stubSession({ ...PART, size: undefined }, [])
@@ -224,10 +223,7 @@ describe('the compose budget', () => {
         return appends === 1 ? held : Promise.resolve({ uid: 9 })
       },
     }
-    const session = {
-      withMailbox: <T>(_path: string, fn: (c: never) => Promise<T>) => fn(client as never),
-      specialUse: async () => 'Drafts',
-    } as unknown as ImapSession
+    const session = fakeSession(client, { specialUse: async () => 'Drafts' })
     const core = makeCoreApi(cfg(), session)
     const draft = { subject: 's', body: 'b', attachments: [REF] }
 
@@ -249,10 +245,7 @@ describe('the compose budget', () => {
         throw new Error('NO [OVERQUOTA]')
       },
     }
-    const session = {
-      withMailbox: <T>(_path: string, fn: (c: never) => Promise<T>) => fn(client as never),
-      specialUse: async () => 'Drafts',
-    } as unknown as ImapSession
+    const session = fakeSession(client, { specialUse: async () => 'Drafts' })
 
     await expect(
       createDraft(session, cfg(), { subject: 's', body: 'b', attachments: [REF] }, budget),

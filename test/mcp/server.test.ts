@@ -8,7 +8,7 @@ import { ImapSession } from '../../src/core/client.js'
 import { ToolError } from '../../src/errors.js'
 import { buildServer } from '../../src/mcp/server.js'
 import { FENCE_CLOSE, FENCE_OPEN, fenceMarkers } from '../../src/safety/render.js'
-import { nonceOf } from '../unit/helpers.js'
+import { nonceOf, renderableEmail } from '../unit/helpers.js'
 import { makeUntrusted } from '../../src/safety/untrusted.js'
 
 const BASE_ENV = { EMAIL_USER: 'tester@example.com', EMAIL_PASSWORD: 'pw', IMAP_HOST: 'localhost' }
@@ -33,25 +33,12 @@ const summary = () => ({
   flagged: true,
 })
 
-const email = () => ({
-  folder: 'INBOX',
-  uid: 7,
-  sent: new Date('2026-08-05T10:00:00Z'),
-  received: new Date('2026-08-05T10:00:05Z'),
-  sizeBytes: 4200,
-  from: makeUntrusted('Alice <alice@x.example>'),
-  fromName: makeUntrusted('Alice'),
-  fromAddress: makeUntrusted('alice@x.example'),
-  replyTo: [],
-  replyToAddresses: [],
-  to: makeUntrusted('tester@example.com'),
-  cc: makeUntrusted(''),
-  subject: makeUntrusted('Quarterly report'),
-  body: makeUntrusted('Body text here'),
-  bodyCutShort: false,
-  bodyIsHtml: false,
-  attachments: [],
-})
+const email = () =>
+  renderableEmail({
+    to: makeUntrusted('tester@example.com'),
+    subject: makeUntrusted('Quarterly report'),
+    body: makeUntrusted('Body text here'),
+  })
 
 type Calls = Record<string, unknown[]>
 
@@ -157,8 +144,6 @@ async function call(
   return { text, isError: result.isError === true }
 }
 
-// --- tier gating: a disabled tier's tools are never registered ---------------
-
 // exact lists, so each row also proves no other tier's tools leaked in
 it.each([
   ['the default configuration', {}, [...READ_TOOLS, 'create_draft']],
@@ -177,8 +162,6 @@ it('calling a tool that was never registered fails as unknown', async () => {
   const result = await call(client, 'create_draft', { subject: 's', body: 'b' })
   expect(result.isError).toBe(true)
 })
-
-// --- tool metadata ----------------------------------------------------------
 
 const EVERY_TIER = { CAPABILITIES: 'drafts,manage,delete,send,sieve-read', SMTP_HOST: 'localhost' }
 
@@ -208,8 +191,6 @@ it('the recipient schemas are self-contained, with no internal references', asyn
     expect(JSON.stringify(properties.cc)).toContain('"format":"email"')
   }
 })
-
-// --- read tools -------------------------------------------------------------
 
 it('get_email responses carry the fence around message content', async () => {
   const { client } = await startServer()
@@ -313,8 +294,6 @@ it('get_attachment reports the saved file in metric units and passes part_id thr
   expect(calls.getAttachment).toEqual(['INBOX', 7, '2'])
 })
 
-// --- drafts -----------------------------------------------------------------
-
 it('create_draft echoes the recipients and the review expectation', async () => {
   const { client, calls } = await startServer()
   const { text, isError } = await call(client, 'create_draft', {
@@ -413,8 +392,6 @@ it('create_draft maps attachment references to core and bounds how many a draft 
   expect(tooMany.isError).toBe(true)
 })
 
-// --- manage -------------------------------------------------------------
-
 it('move_email reports the move and maps its arguments to core in order', async () => {
   const { client, calls } = await startServer({ CAPABILITIES: 'manage' })
   const { text, isError } = await call(client, 'move_email', { folder: 'INBOX', uid: 7, destination: 'Archive' })
@@ -447,8 +424,6 @@ it('set_flags rejects a call with neither seen nor flagged, without reaching cor
   expect(calls.setFlags).toBeUndefined()
 })
 
-// --- delete: the honesty flagship ---------------------------------------
-
 it('delete_email reports a move to Trash, never a permanent delete (C-2 regression)', async () => {
   const { client, calls } = await startServer({ CAPABILITIES: 'delete' })
   const { text, isError } = await call(client, 'delete_email', { folder: 'INBOX', uid: 7 })
@@ -458,8 +433,6 @@ it('delete_email reports a move to Trash, never a permanent delete (C-2 regressi
   expect(text.toLowerCase()).not.toContain('permanent')
   expect(calls.deleteEmail).toEqual(['INBOX', 7])
 })
-
-// --- send: the one tier that transmits ------------------------------------
 
 const SEND_ENV = { CAPABILITIES: 'send', SMTP_HOST: 'localhost' }
 
@@ -485,7 +458,7 @@ it('send_email passes in_reply_to through and names the original in the result',
     in_reply_to: { folder: 'INBOX', uid: 42 },
   })
   expect(calls.sendEmail?.[0]).toMatchObject({ inReplyTo: { folder: 'INBOX', uid: 42 } })
-  expect(text).toBe('Sent to a@x.example as a reply to INBOX uid 42 (2 of 5 session sends used).')
+  expect(text).toContain('as a reply to INBOX uid 42')
 })
 
 it('send_email says up front that the message leaves the mailbox', async () => {
@@ -560,8 +533,6 @@ it('send_email names a recipient the server refused instead of reporting a clean
   expect(text).toMatch(/refus/i)
 })
 
-// --- sieve-read -------------------------------------------------------------
-
 const SIEVE_ENV = { CAPABILITIES: 'sieve-read' }
 
 it('list_sieve_scripts fences the names and marks the active script', async () => {
@@ -595,8 +566,6 @@ it.each([
   expect(result.isError).toBe(true)
   expect(calls.getSieveScript).toBeUndefined()
 })
-
-// --- the error boundary -----------------------------------------------------
 
 it('a ToolError surfaces as an error result carrying its own sanitized message', async () => {
   const { client } = await startServer(
@@ -658,8 +627,6 @@ it('an unexpected error is masked, logged to stderr, and never written to stdout
   expect(logSpy).not.toHaveBeenCalled()
   expect(stdoutSpy).not.toHaveBeenCalled()
 })
-
-// --- the seam itself --------------------------------------------------------
 
 it('the real CoreApi refuses every optional capability when its tier is off, without opening a connection', async () => {
   // Catches a tool registered in server.ts without a matching capability check

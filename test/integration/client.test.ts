@@ -1,19 +1,18 @@
 import { readFileSync } from 'node:fs'
-import type { AddressInfo } from 'node:net'
 import { dirname, join } from 'node:path'
 import { createServer as createTlsServer } from 'node:tls'
 import { ImapFlow } from 'imapflow'
 import { describe, expect, vi } from 'vitest'
 import { ImapSession } from '../../src/core/client.js'
 import { ToolError } from '../../src/errors.js'
+import { listenOnAnyPort } from '../unit/helpers.js'
 import { testConfig, itIntegration, testCaFile } from './helpers.js'
 
 const SOH = String.fromCharCode(1)
 
 /**
- * Dovecot offers no XOAUTH2, and imapflow never attempts it against a server
- * that does not advertise it, so this refusal comes from a fake answering just
- * enough IMAP for one login attempt.
+ * Dovecot offers no XOAUTH2 and imapflow never attempts it unadvertised, so a fake answers just
+ * enough IMAP for one login
  */
 async function refusingXoauth2Server() {
   const attempts: string[] = []
@@ -41,9 +40,8 @@ async function refusingXoauth2Server() {
       })
     },
   )
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   return {
-    port: (server.address() as AddressInfo).port,
+    port: await listenOnAnyPort(server),
     attempts,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   }
@@ -115,18 +113,8 @@ describe('ImapSession against a local Dovecot container', () => {
     expect((err as ToolError).message).toContain('TLS certificate')
   })
 
-  itIntegration('finds special-use Drafts and Trash', async () => {
-    const s = new ImapSession(testConfig())
-    try {
-      expect(await s.specialUse('\\Drafts', 'Drafts')).toBe('Drafts')
-      expect(await s.specialUse('\\Trash', 'Trash')).toBe('Trash')
-    } finally {
-      await s.close()
-    }
-  })
-
-  // the assertions above pass whether special-use was discovered or the fallback
-  // was returned, so these prove discovery actually happened
+  // a lookup that returns the fallback passes the name check too, so the
+  // FALLBACK_NOT_USED calls are what prove discovery actually happened
   itIntegration('discovers special-use from the server, not from the fallback', async () => {
     const s = new ImapSession(testConfig())
     try {
@@ -134,6 +122,7 @@ describe('ImapSession against a local Dovecot container', () => {
       expect(folders.find((f) => f.specialUse === '\\Drafts')?.path).toBe('Drafts')
       expect(folders.find((f) => f.specialUse === '\\Trash')?.path).toBe('Trash')
       expect(await s.specialUse('\\Drafts', 'FALLBACK_NOT_USED')).toBe('Drafts')
+      expect(await s.specialUse('\\Trash', 'FALLBACK_NOT_USED')).toBe('Trash')
     } finally {
       await s.close()
     }
@@ -173,10 +162,9 @@ describe('ImapSession against a local Dovecot container', () => {
   itIntegration('falls back when no folder carries the flag', async () => {
     const s = new ImapSession(testConfig())
     try {
-      // \Archive is used only because the harness deliberately has no folder
-      // carrying it, which is the one way to exercise the fallback branch against
-      // a real server. The cast is because the declared parameter type is narrowed
-      // to the two flags production code needs.
+      // \Archive because the harness has no folder carrying it, the only way to reach the fallback
+      // branch on a real server
+      // the cast is because the declared parameter type is narrowed to the flags production needs
       const folders = await s.withClient(async (c) => c.list())
       expect(folders.some((f) => f.specialUse === '\\Archive')).toBe(false)
       expect(await s.specialUse('\\Archive' as '\\Trash', 'Archive')).toBe('Archive')

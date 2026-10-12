@@ -1,5 +1,4 @@
-import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { createServer, type Server, type Socket } from 'node:net'
 import { dirname, join } from 'node:path'
 import { TLSSocket } from 'node:tls'
@@ -9,11 +8,11 @@ import { ImapSession } from '../../src/core/client.js'
 import { getSieveScript, listSieveScripts } from '../../src/core/sieve.js'
 import { ToolError } from '../../src/errors.js'
 import { renderSieveList, renderSieveScript } from '../../src/safety/render.js'
-import { itIntegration, testCaFile, testConfig } from './helpers.js'
+import { listenOnAnyPort } from '../unit/helpers.js'
+import { ensureCerts, itIntegration, testCaFile, testConfig } from './helpers.js'
 
-// The first describe below talks to the Dovecot container run.sh starts, which
-// also seeds the two scripts these tests read: "filters" (active) and "bulky"
-// (deliberately larger than a 1 kB body cap).
+// talks to the Dovecot container run.sh starts, which seeds "filters" (active) and "bulky" (larger
+// than a 1 kB body cap)
 
 const SEEDED = 'filters'
 const OVERSIZED = 'bulky'
@@ -22,10 +21,7 @@ function sieveConfig(overrides: Record<string, string | undefined> = {}) {
   return testConfig({ CAPABILITIES: 'sieve-read', ...overrides })
 }
 
-/**
- * The kb argument has to match the MAX_BODY_KB the script was read under,
- * because the renderer is what truncates.
- */
+/** kb must match the MAX_BODY_KB the script was read under, since the renderer truncates */
 function scriptText(content: Awaited<ReturnType<typeof getSieveScript>>, maxBodyKb = 64): string {
   return renderSieveScript('n', content, maxBodyKb)
 }
@@ -89,16 +85,10 @@ describe('the ManageSieve client', () => {
   })
 })
 
-// The cases below need Docker for nothing: what they pin is what the client
-// refuses to do, which takes a server that misbehaves rather than a correct one.
-// They share the certificate run.sh generates for the container.
+// no Docker here, these pin what the client refuses against a misbehaving server. They share the
+// certificate run.sh generates
 
 const certDir = dirname(testCaFile)
-
-function ensureCerts(): void {
-  if (existsSync(testCaFile)) return
-  execFileSync('bash', [join(certDir, '..', 'gen-certs.sh')], { stdio: 'inherit' })
-}
 
 /** everything a real greeting has, minus whichever capability the case is about */
 function greeting(capabilities: string[]): string {
@@ -110,16 +100,6 @@ function greeting(capabilities: string[]): string {
     'OK "Fake ready."',
     '',
   ].join('\r\n')
-}
-
-async function listenOnAnyPort(server: Server): Promise<number> {
-  return new Promise<number>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
-      resolve(typeof address === 'object' && address !== null ? address.port : 0)
-    })
-  })
 }
 
 async function closeServer(server: Server | undefined): Promise<void> {
@@ -153,9 +133,8 @@ describe('a sieve server that stalls during the TLS upgrade', () => {
     await closeServer(server)
   })
 
-  // The socket timeout is 10 s and is not injectable, so this case costs real
-  // wall-clock time. The defect it pins is a call that never returns at all,
-  // which no shorter test can distinguish from a slow one.
+  // the socket timeout is 10 s and not injectable, so this costs real wall-clock time. No shorter
+  // test tells a call that never returns from a slow one
   itIntegration(
     'gives up on the timeout instead of hanging forever',
     async () => {
@@ -175,8 +154,7 @@ describe('a sieve server that streams more than the client will read', () => {
   let port = 0
   let streamed = 0
 
-  // Far past anything the client should accept, and a hard stop so a failing
-  // run cannot fill memory before the assertion gets to speak.
+  // far past anything the client should accept, with a hard stop so a failing run cannot fill memory
   const CHUNK = Buffer.alloc(64 * 1024, 0x61)
   const HARD_STOP = 60_000_000
 

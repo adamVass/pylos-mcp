@@ -13,7 +13,7 @@ export interface MicrosoftAuthConfig {
 }
 
 /** for tests only: production passes none of these */
-export interface MicrosoftAuthDeps {
+interface MicrosoftAuthDeps {
   authority?: string
   tokenDir?: string
   openBrowser?: (url: string) => void

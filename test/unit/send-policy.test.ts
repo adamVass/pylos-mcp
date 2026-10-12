@@ -2,7 +2,8 @@ import { expect, it } from 'vitest'
 import { loadConfig } from '../../src/config.js'
 import type { ImapSession } from '../../src/core/client.js'
 import { ComposeBudget } from '../../src/core/draft.js'
-import { SendState, checkAllowlist, sendEmail } from '../../src/core/smtp.js'
+import { checkAllowlist } from '../../src/core/address.js'
+import { SendState, sendEmail } from '../../src/core/smtp.js'
 import { sendPolicyClause } from '../../src/mcp/tools/send.js'
 
 it.each([

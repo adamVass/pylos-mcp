@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
-import { type AddressInfo, connect } from 'node:net'
+import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { MicrosoftAuth, type MicrosoftAuthConfig } from '../../src/core/oauth.js'
 import { tokenPath, writeToken } from '../../src/core/token-store.js'
 import { ToolError } from '../../src/errors.js'
+import { listenOnAnyPort } from './helpers.js'
 
 const USER = 'jane@outlook.example'
 // a named tenant, so the tests also show MS_TENANT reaching both endpoints
@@ -42,7 +43,6 @@ interface TokenCall {
 
 type Answer = { status?: number; body: unknown }
 
-/** stands in for Microsoft's token endpoint */
 async function fakeMicrosoft(answer: (form: Record<string, string>) => Answer | Promise<Answer>) {
   const calls: TokenCall[] = []
   const server = createServer((req, res) => {
@@ -57,12 +57,11 @@ async function fakeMicrosoft(answer: (form: Record<string, string>) => Answer | 
       res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body))
     })
   })
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const port = await listenOnAnyPort(server)
   servers.push(server)
-  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, calls }
+  return { url: `http://127.0.0.1:${port}`, calls }
 }
 
-/** holds a fake answer until opened */
 function gate(): { wait: Promise<void>; open: () => void } {
   let open = (): void => {}
   const wait = new Promise<void>((resolve) => {
@@ -86,14 +85,12 @@ async function rejection(p: Promise<unknown>): Promise<ToolError> {
   return err as ToolError
 }
 
-/** plays the browser: follows the start link to Microsoft's authorize page */
 async function authorizePage(): Promise<URL> {
   const res = await fetch(opened.at(-1) as string, { redirect: 'manual' })
   expect(res.status).toBe(302)
   return new URL(res.headers.get('location') as string)
 }
 
-/** plays Microsoft sending the browser back to the redirect URI */
 function comeBack(authorize: URL, query: Record<string, string>): Promise<Response> {
   const back = new URL(authorize.searchParams.get('redirect_uri') as string)
   for (const [key, value] of Object.entries(query)) back.searchParams.set(key, value)

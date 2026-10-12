@@ -10,9 +10,7 @@ import { registerReadTools } from './tools/read.js'
 import { registerSendTools } from './tools/send.js'
 import { registerSieveTools } from './tools/sieve.js'
 
-// package.json sits two directories up from this file both in src/ (run directly
-// by the test loader) and in dist/ (compiled), since rootDir and outDir are one
-// level below the package root either way.
+// two levels up from both src/ and dist/
 const packageJsonPath = fileURLToPath(new URL('../../package.json', import.meta.url))
 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { version: string; description: string }
 
@@ -30,18 +28,14 @@ const SERVER_INFO = {
   ],
 }
 
-/**
- * A capability that is off has its tools NEVER REGISTERED: they are absent from
- * tools/list rather than refused when called. A tool the model cannot see is one
- * it cannot be argued into attempting.
- */
+// a disabled capability's tools are never registered, so the model cannot be argued into calling them
 export function buildServer(cfg: Config, core: CoreApi): McpServer {
   const server = new McpServer(SERVER_INFO)
 
   registerReadTools(server, cfg, core)
   if (cfg.capabilities.has('drafts')) registerDraftTools(server, cfg, core)
-  if (cfg.capabilities.has('manage')) registerManageTools(server, cfg, core)
-  if (cfg.capabilities.has('delete')) registerDeleteTools(server, cfg, core)
+  if (cfg.capabilities.has('manage')) registerManageTools(server, core)
+  if (cfg.capabilities.has('delete')) registerDeleteTools(server, core)
   if (cfg.capabilities.has('send')) registerSendTools(server, cfg, core)
   if (cfg.capabilities.has('sieve-read')) registerSieveTools(server, cfg, core)
 

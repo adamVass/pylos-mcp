@@ -3,27 +3,10 @@ import type { ImapFlow } from 'imapflow'
 import { ImapSession } from '../../src/core/client.js'
 import { getThread } from '../../src/core/thread.js'
 import { readUntrusted } from '../../src/safety/untrusted.js'
-import { itIntegration, seedClient, testConfig } from './helpers.js'
+import { itIntegration, rawMessage, seedClient, testConfig } from './helpers.js'
 
-// dedicated folders, so the search and send suites' counts on INBOX, Drafts and Sent stay untouched
 const FOLDER = 'ThreadFixtures'
 const OTHER = 'ThreadOther'
-
-function rfc822(subject: string, headers: string[]): Buffer {
-  return Buffer.from(
-    [
-      'From: Sender <sender@x.example>',
-      'To: tester@x.example',
-      `Subject: ${subject}`,
-      ...headers,
-      'MIME-Version: 1.0',
-      'Content-Type: text/plain; charset=utf-8',
-      '',
-      'body',
-      '',
-    ].join('\r\n'),
-  )
-}
 
 // received dates, not Date headers, decide the order, so these run against arrival order
 const received = (day: number) => new Date(Date.UTC(2026, 9, day))
@@ -35,9 +18,7 @@ describe('getThread against a local Dovecot container', () => {
 
   beforeAll(async () => {
     if (!process.env.RUN_INTEGRATION) return
-    seeder = seedClient()
-    seeder.on('error', () => {})
-    await seeder.connect()
+    seeder = await seedClient()
     for (const folder of [FOLDER, OTHER]) {
       await seeder.mailboxCreate(folder).catch(() => undefined)
       const { messages } = await seeder.status(folder, { messages: true })
@@ -45,7 +26,12 @@ describe('getThread against a local Dovecot container', () => {
     }
 
     const append = async (name: string, folder: string, day: number, headers: string[]) => {
-      const result = await seeder?.append(folder, rfc822(name.replace('-copy', ''), headers), [], received(day))
+      const result = await seeder?.append(
+        folder,
+        rawMessage({ subject: name.replace('-copy', ''), from: 'Sender <sender@x.example>', headers }),
+        [],
+        received(day),
+      )
       if (!result || result.uid === undefined) throw new Error(`APPEND of ${name} returned no UID`)
       uids[name] = result.uid
     }

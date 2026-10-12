@@ -4,7 +4,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { z } from 'zod'
 import type { MicrosoftAuthConfig } from './core/oauth.js'
-import { isAllowlistEntry } from './core/smtp.js'
+import { isAllowlistEntry } from './core/address.js'
 import type { DetectOptions } from './safety/detect.js'
 
 type Capability = 'read' | 'drafts' | 'manage' | 'send' | 'delete' | 'sieve-read'
@@ -123,7 +123,8 @@ function requireString(varName: string, value: string | undefined): string {
   return value
 }
 
-function numericEnv(varName: string, raw: string | undefined, defaultValue: number): number {
+function numericEnv(env: Record<string, string | undefined>, varName: string, defaultValue: number): number {
+  const raw = env[varName]
   if (raw === undefined) return defaultValue
   const result = positiveIntSchema.safeParse(raw)
   if (!result.success) {
@@ -132,12 +133,20 @@ function numericEnv(varName: string, raw: string | undefined, defaultValue: numb
   return result.data
 }
 
-function booleanEnv(varName: string, raw: string | undefined, defaultValue: boolean): boolean {
+function booleanEnv(env: Record<string, string | undefined>, varName: string, defaultValue: boolean): boolean {
+  const raw = env[varName]
   if (raw === undefined) return defaultValue
   const normalized = raw.trim().toLowerCase()
   if (normalized === 'true') return true
   if (normalized === 'false') return false
   throw new ConfigError(`${varName} must be "true" or "false", got "${raw}"`)
+}
+
+function listEnv(raw: string | undefined, separator = ','): string[] | undefined {
+  return raw
+    ?.split(separator)
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
 }
 
 function resolveProvider(provider: string | undefined): Preset | undefined {
@@ -276,8 +285,8 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
   if (!imapHost) {
     throw new ConfigError('IMAP host is not configured. Set IMAP_HOST or PROVIDER')
   }
-  const starttls = booleanEnv('IMAP_STARTTLS', env.IMAP_STARTTLS, false)
-  const imap = { host: imapHost, port: numericEnv('IMAP_PORT', env.IMAP_PORT, starttls ? 143 : 993), starttls }
+  const starttls = booleanEnv(env, 'IMAP_STARTTLS', false)
+  const imap = { host: imapHost, port: numericEnv(env, 'IMAP_PORT', starttls ? 143 : 993), starttls }
 
   let smtp: { host: string; port: number } | undefined
   if (capabilities.has('send')) {
@@ -287,55 +296,47 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
         'SMTP host is not configured. Set SMTP_HOST or PROVIDER (required because the "send" capability is enabled)',
       )
     }
-    smtp = { host: smtpHost, port: numericEnv('SMTP_PORT', env.SMTP_PORT, preset?.smtpPort ?? 465) }
+    smtp = { host: smtpHost, port: numericEnv(env, 'SMTP_PORT', preset?.smtpPort ?? 465) }
   }
 
   let sieve: { host: string; port: number } | undefined
   if (capabilities.has('sieve-read')) {
     const sieveHost = env.SIEVE_HOST ?? imapHost
-    sieve = { host: sieveHost, port: numericEnv('SIEVE_PORT', env.SIEVE_PORT, 4190) }
+    sieve = { host: sieveHost, port: numericEnv(env, 'SIEVE_PORT', 4190) }
   }
 
-  const maxBodyKb = numericEnv('MAX_BODY_KB', env.MAX_BODY_KB, 64)
-  const maxAttachmentMb = numericEnv('MAX_ATTACHMENT_MB', env.MAX_ATTACHMENT_MB, 25)
-  const sendSessionCap = numericEnv('SEND_SESSION_CAP', env.SEND_SESSION_CAP, 5)
+  const maxBodyKb = numericEnv(env, 'MAX_BODY_KB', 64)
+  const maxAttachmentMb = numericEnv(env, 'MAX_ATTACHMENT_MB', 25)
+  const sendSessionCap = numericEnv(env, 'SEND_SESSION_CAP', 5)
 
   const downloadDir = expandHome(env.DOWNLOAD_DIR ?? '~/Downloads')
 
-  const sendAllowlist =
-    env.SEND_ALLOWLIST !== undefined
-      ? env.SEND_ALLOWLIST.split(',')
-          .map((s) => s.trim().toLowerCase())
-          .filter(Boolean)
-      : undefined
+  const sendAllowlist = listEnv(env.SEND_ALLOWLIST)
   // an entry that can never match leaves the gate shut while looking open
   const unmatchable = sendAllowlist?.find((entry) => !isAllowlistEntry(entry))
   if (unmatchable !== undefined) {
     throw new ConfigError(`SEND_ALLOWLIST entry "${unmatchable}" is not an address, *@domain, or *`)
   }
 
-  const sendSaveCopy = booleanEnv('SEND_SAVE_COPY', env.SEND_SAVE_COPY, true)
+  const sendSaveCopy = booleanEnv(env, 'SEND_SAVE_COPY', true)
 
-  const draftsNoRecipients = booleanEnv('DRAFTS_NO_RECIPIENTS', env.DRAFTS_NO_RECIPIENTS, false)
-
-  const hiddenText = booleanEnv('FLAG_HIDDEN_TEXT', env.FLAG_HIDDEN_TEXT, true)
-  const instructionPatterns = booleanEnv('FLAG_INSTRUCTION_PATTERNS', env.FLAG_INSTRUCTION_PATTERNS, true)
-  const encodedBlobs = booleanEnv('FLAG_ENCODED_BLOBS', env.FLAG_ENCODED_BLOBS, true)
-  const senderMismatch = booleanEnv('FLAG_SENDER_MISMATCH', env.FLAG_SENDER_MISMATCH, true)
-  const mixedScript = booleanEnv('FLAG_MIXED_SCRIPT', env.FLAG_MIXED_SCRIPT, true)
-  const dmarcFail = booleanEnv('FLAG_DMARC_FAIL', env.FLAG_DMARC_FAIL, true)
-  const stripHiddenText = booleanEnv('STRIP_HIDDEN_TEXT', env.STRIP_HIDDEN_TEXT, false)
+  const draftsNoRecipients = booleanEnv(env, 'DRAFTS_NO_RECIPIENTS', false)
 
   // pipes, not commas: a phrase may contain a comma, and phrases are the whole
   // point of this variable
-  const extraPatterns =
-    env.FLAG_EXTRA_PATTERNS !== undefined
-      ? env.FLAG_EXTRA_PATTERNS.split('|')
-          .map((s) => s.trim().toLowerCase())
-          .filter(Boolean)
-      : []
+  const extraPatterns = listEnv(env.FLAG_EXTRA_PATTERNS, '|') ?? []
 
-  if (stripHiddenText && !hiddenText) {
+  const detect: DetectOptions = {
+    hiddenText: booleanEnv(env, 'FLAG_HIDDEN_TEXT', true),
+    instructionPatterns: booleanEnv(env, 'FLAG_INSTRUCTION_PATTERNS', true),
+    encodedBlobs: booleanEnv(env, 'FLAG_ENCODED_BLOBS', true),
+    senderMismatch: booleanEnv(env, 'FLAG_SENDER_MISMATCH', true),
+    mixedScript: booleanEnv(env, 'FLAG_MIXED_SCRIPT', true),
+    dmarcFail: booleanEnv(env, 'FLAG_DMARC_FAIL', true),
+    stripHiddenText: booleanEnv(env, 'STRIP_HIDDEN_TEXT', false),
+    extraPatterns,
+  }
+  if (detect.stripHiddenText && !detect.hiddenText) {
     throw new ConfigError(
       'STRIP_HIDDEN_TEXT=true does nothing while FLAG_HIDDEN_TEXT=false, because stripping runs inside the hidden-text detector. Enable FLAG_HIDDEN_TEXT or drop STRIP_HIDDEN_TEXT',
     )
@@ -351,10 +352,7 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
     }
   }
 
-  const configuredIds = (env.AUTHSERV_ID ?? '')
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean)
+  const configuredIds = listEnv(env.AUTHSERV_ID) ?? []
   const authservIds = configuredIds.length > 0 ? configuredIds : (preset?.authservIds ?? [])
   const badId = authservIds.find((id) => !/^\.?[a-z0-9][a-z0-9_.-]*$/.test(id))
   if (badId !== undefined) {
@@ -378,15 +376,6 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
     draftsNoRecipients,
     tlsCaFile,
     authservIds,
-    detect: {
-      hiddenText,
-      instructionPatterns,
-      encodedBlobs,
-      senderMismatch,
-      mixedScript,
-      dmarcFail,
-      stripHiddenText,
-      extraPatterns,
-    },
+    detect,
   }
 }

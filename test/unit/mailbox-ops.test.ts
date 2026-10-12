@@ -21,25 +21,20 @@ function baseClient(overrides: Partial<ImapFlow> = {}): Partial<ImapFlow> {
 }
 
 describe('moveEmail refuses to emulate MOVE on a server that lacks it', () => {
-  it('throws before requireMessage or messageMove/messageCopy run', async () => {
+  it('throws before requireMessage or messageMove/messageCopy run, and the message explains why without the word "permanent"', async () => {
     const messageMove = vi.fn()
     const messageCopy = vi.fn()
     const fetchOne = vi.fn().mockResolvedValue({ uid: 7 })
     const client = baseClient({ messageMove, messageCopy, fetchOne })
 
-    await expect(moveEmail(fakeSession(client), 'INBOX', 7, 'Archive')).rejects.toMatchObject({ code: 'server' })
+    const error = await moveEmail(fakeSession(client), 'INBOX', 7, 'Archive').catch((e: Error) => e)
 
+    expect(error).toMatchObject({ code: 'server' })
+    expect((error as Error).message).toMatch(/MOVE capability/i)
+    expect((error as Error).message.toLowerCase()).not.toContain('permanent')
     expect(fetchOne).not.toHaveBeenCalled()
     expect(messageMove).not.toHaveBeenCalled()
     expect(messageCopy).not.toHaveBeenCalled()
-  })
-
-  it('the refusal message explains why, without the word "permanent"', async () => {
-    const client = baseClient({ messageMove: vi.fn() })
-    const error = await moveEmail(fakeSession(client), 'INBOX', 7, 'Archive').catch((e: Error) => e)
-
-    expect((error as Error).message).toMatch(/MOVE capability/i)
-    expect((error as Error).message.toLowerCase()).not.toContain('permanent')
   })
 
   it.each([

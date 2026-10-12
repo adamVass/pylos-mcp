@@ -2,27 +2,13 @@ import { afterAll, beforeAll, expect } from 'vitest'
 import type { ImapFlow } from 'imapflow'
 import { makeCoreApi, type CoreApi } from '../../src/core/api.js'
 import { ImapSession } from '../../src/core/client.js'
-import { itIntegration, seedClient, testConfig } from './helpers.js'
+import { itIntegration, rawMessage, seedClient, testConfig } from './helpers.js'
 
-// the search suite asserts absolute message counts on INBOX and Drafts and
-// refuses to seed if either is already occupied
 const FOLDER = 'T8Fixtures'
 const SUBJECT = 'seam-fixture'
 const BODY = 'the body the seam must hand back'
 
-const message = Buffer.from(
-  [
-    'From: Sender Name <sender@x.example>',
-    'To: tester@x.example',
-    `Subject: ${SUBJECT}`,
-    'Date: Sun, 05 Jul 2026 10:00:00 +0000',
-    'MIME-Version: 1.0',
-    'Content-Type: text/plain; charset=utf-8',
-    '',
-    BODY,
-    '',
-  ].join('\r\n'),
-)
+const message = rawMessage({ subject: SUBJECT, body: BODY, date: new Date(Date.UTC(2026, 6, 5, 10)) })
 
 let session: ImapSession
 let core: CoreApi
@@ -31,9 +17,7 @@ let seeder: ImapFlow
 beforeAll(async () => {
   if (!process.env.RUN_INTEGRATION) return
 
-  seeder = seedClient()
-  seeder.on('error', () => {})
-  await seeder.connect()
+  seeder = await seedClient()
   await seeder.mailboxCreate(FOLDER).catch(() => undefined)
   await seeder.append(FOLDER, message, [])
 
@@ -60,8 +44,7 @@ itIntegration('listFolders reports the folder tree with message counts from a re
   expect(drafts?.path).toBe('Drafts')
 })
 
-// The MCP tests inject a fake core, so a transposed argument in the seam's
-// adapters would first surface against a real mailbox.
+// a transposed adapter argument would first surface against a real mailbox, as the MCP tests inject a fake core
 itIntegration('searchEmails and getEmail reach the right message through the seam', async () => {
   const { total, items } = await core.searchEmails({ folder: FOLDER, limit: 5, offset: 0 })
   expect(total).toBe(1)

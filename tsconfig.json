@@ -6,7 +6,9 @@
     "target": "ES2022",
     "outDir": "dist",
     "rootDir": "src",
-    "declaration": false
+    "declaration": false,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
   },
   "include": ["src/**/*.ts"]
 }

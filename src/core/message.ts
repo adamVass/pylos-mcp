@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { mkdir, open, unlink } from 'node:fs/promises'
 import { Transform, type Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
-import type { FetchMessageObject, FetchQueryObject, ImapFlow, MessageStructureObject } from 'imapflow'
+import type { FetchMessageObject, FetchQueryObject, ImapFlow } from 'imapflow'
 import type { Config } from '../config.js'
 import { formatAddress } from './address.js'
 import type { ImapSession } from './client.js'
@@ -35,7 +35,6 @@ function untrustedList(values: string[]): UntrustedText[] {
   return values.filter(Boolean).map((value) => makeUntrusted(value))
 }
 
-/** bounds the exclusive-create retry so a pathological directory cannot spin it forever */
 const MAX_NAME_ATTEMPTS = 50
 
 export async function getEmail(
@@ -118,10 +117,7 @@ export async function getAttachment(
     await makeDownloadDir(cfg.downloadDir)
     const name = sanitizeFilename(downloadName(part.node))
 
-    const download = await client.download(String(uid), part.id, { uid: true, chunkSize: DOWNLOAD_CHUNK_BYTES })
-    // a message expunged between the FETCH and this DOWNLOAD yields an object with
-    // no stream rather than an error
-    if (!download?.content) throw new ToolError('not_found', MESSAGE_GONE)
+    const download = await downloadPart(client, uid, part.id, { chunkSize: DOWNLOAD_CHUNK_BYTES }, MESSAGE_GONE)
 
     const written = await writeExclusive(cfg.downloadDir, name, download.content, cfg.maxAttachmentMb)
 
@@ -131,10 +127,6 @@ export async function getAttachment(
       contentType: download.meta?.contentType ?? part.node.type,
     }
   })
-}
-
-function findPart(parts: MessagePart[], partId: string): MessagePart | undefined {
-  return parts.find((part) => part.id === partId)
 }
 
 /**
@@ -150,7 +142,7 @@ export async function resolvePartForDownload(
 ): Promise<MessagePart> {
   const message = await fetchMessage(client, uid, { bodyStructure: true })
   const parts = leafParts(message.bodyStructure)
-  const part = findPart(parts, partId)
+  const part = parts.find((candidate) => candidate.id === partId)
   if (!part) throw unknownPart(parts)
 
   enforceDeclaredSizeCap(part, maxAttachmentMb)
@@ -224,6 +216,20 @@ function toAttachment(part: MessagePart): RenderableEmail['attachments'][number]
   }
 }
 
+export async function downloadPart(
+  client: ImapFlow,
+  uid: number,
+  partId: string,
+  options: { chunkSize?: number; maxBytes?: number },
+  gone: string,
+) {
+  const download = await client.download(String(uid), partId, { uid: true, ...options })
+  // a message expunged between the FETCH and this DOWNLOAD yields an object with
+  // no stream rather than an error
+  if (!download?.content) throw new ToolError('not_found', gone)
+  return { ...download, content: download.content }
+}
+
 /**
  * A body is meant to be truncated, so `maxBytes` carries none of the
  * silent-corruption risk that rules it out for downloads. The cut is reported
@@ -232,8 +238,7 @@ function toAttachment(part: MessagePart): RenderableEmail['attachments'][number]
  */
 async function downloadText(client: ImapFlow, uid: number, part: MessagePart, maxBodyKb: number): Promise<BodyText> {
   const limit = readLimitBytes(maxBodyKb)
-  const download = await client.download(String(uid), part.id, { uid: true, maxBytes: limit + 1 })
-  if (!download?.content) throw new ToolError('not_found', MESSAGE_GONE)
+  const download = await downloadPart(client, uid, part.id, { maxBytes: limit + 1 }, MESSAGE_GONE)
 
   const chunks: Buffer[] = []
   for await (const chunk of download.content) chunks.push(chunk as Buffer)

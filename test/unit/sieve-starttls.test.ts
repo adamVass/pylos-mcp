@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, it, expect } from 'vitest'
 import { loadConfig } from '../../src/config.js'
 import { listSieveScripts } from '../../src/core/sieve.js'
 import { ToolError } from '../../src/errors.js'
+import { listenOnAnyPort } from './helpers.js'
 
 // The refusal happens on the greeting, before any TLS upgrade is attempted, so
 // there is nothing here for a container or a certificate to provide.
@@ -30,13 +31,7 @@ describe('a sieve server that does not offer STARTTLS', () => {
       socket.write(GREETING_WITHOUT_STARTTLS)
     })
 
-    port = await new Promise<number>((resolve, reject) => {
-      server.once('error', reject)
-      server.listen(0, '127.0.0.1', () => {
-        const address = server.address()
-        resolve(typeof address === 'object' && address !== null ? address.port : 0)
-      })
-    })
+    port = await listenOnAnyPort(server)
   })
 
   afterAll(async () => {
