@@ -13,26 +13,26 @@ svg{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans
 .body{font-size:13.5px;fill:#3a3a3c}
 .btn rect{fill:#1f6feb}
 .btn text{font-size:13.5px;font-weight:600;fill:#fff}
-.ring{fill:none;stroke:#C25E3A;stroke-width:1.6;stroke-dasharray:51;stroke-dashoffset:0;transform:rotate(-90deg);transform-box:fill-box;transform-origin:center}
-.tint{fill:#C25E3A;fill-opacity:.13}
-.box rect{fill:#FBEBE4}
-.hl{font-size:13.5px;fill:#7a2e17}
-.hl.em{font-weight:700;fill:#8a2d10;paint-order:stroke;stroke:#C25E3A;stroke-width:8;stroke-linejoin:round;stroke-opacity:.22}
-.b64{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;fill:#8a5a48}
-.chip rect{fill:#fff;stroke:#B4552F;stroke-width:1}
-.chip text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;font-weight:600;fill:#9E4727}
-.cbar{fill:#C25E3A}
+.ring{fill:none;stroke:#732231;stroke-width:1.6;stroke-dasharray:51;stroke-dashoffset:0;transform:rotate(-90deg);transform-box:fill-box;transform-origin:center}
+.tint{fill:#732231;fill-opacity:.13}
+.box rect{fill:#F6E6E8}
+.hl{font-size:13.5px;fill:#6A1F2C}
+.hl.em{font-weight:700;fill:#5A1522;paint-order:stroke;stroke:#732231;stroke-width:8;stroke-linejoin:round;stroke-opacity:.22}
+.b64{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;fill:#76585E}
+.chip rect{fill:#fff;stroke:#A33A4D;stroke-width:1}
+.chip text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;font-weight:600;fill:#8A2A3B}
+.cbar{fill:#732231}
 .co .big{font-size:22px;fill:#1d1d1f}
-.co .neq{font-size:15px;fill:#8a5a48}
-.co .cp{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;fill:#8a5a48}
-.co .t{font-size:13px;fill:#331F12}
+.co .neq{font-size:15px;fill:#76585E}
+.co .cp{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;fill:#76585E}
+.co .t{font-size:13px;fill:#1E2128}
 .fence{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;fill:#59636e}
 .fence .data{fill:#1f2328;font-weight:600}
 .label{font-size:13px;font-weight:600;fill:#59636e}
-.panel rect{fill:#331F12}
-.panel text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;fill:#F2E9D8;white-space:pre}
-.panel .wk{font-weight:700;fill:#E8A98E}
-.panel .dn{fill:#E8A98E;font-weight:600}
+.panel rect{fill:#1E2128}
+.panel text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;fill:#EFEDE6;white-space:pre}
+.panel .wk{font-weight:700;fill:#E8A3AE}
+.panel .dn{fill:#E8A3AE;font-weight:600}
 .band{animation:scan 39.4s linear infinite;transform:translateY(587px)}
 .band rect{animation:bandfade 39.4s linear infinite}
 .a{animation-duration:39.4s;animation-timing-function:linear;animation-iteration-count:infinite}
@@ -105,7 +105,7 @@ svg{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans
 <defs>
 <clipPath id="cc"><rect x="24" y="48" width="832" height="494" rx="12"/></clipPath>
 <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-<stop offset="0" stop-color="#C25E3A" stop-opacity="0"/><stop offset=".5" stop-color="#C25E3A" stop-opacity=".3"/><stop offset="1" stop-color="#C25E3A" stop-opacity="0"/>
+<stop offset="0" stop-color="#732231" stop-opacity="0"/><stop offset=".5" stop-color="#732231" stop-opacity=".3"/><stop offset="1" stop-color="#732231" stop-opacity="0"/>
 </linearGradient>
 <filter id="sh" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity="0.16"/></filter>
 </defs>
@@ -155,7 +155,7 @@ svg{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans
 <text class="body" x="46" y="524">The Lumen Pay Security Team</text>
 </g>
 
-<g class="band"><rect x="24" y="-45" width="832" height="90" fill="url(#bg)"/><rect x="24" y="-0.75" width="832" height="1.5" fill="#C25E3A" fill-opacity=".55"/></g>
+<g class="band"><rect x="24" y="-45" width="832" height="90" fill="url(#bg)"/><rect x="24" y="-0.75" width="832" height="1.5" fill="#732231" fill-opacity=".55"/></g>
 </g>
 
 <rect class="cbar chip1 a" x="560" y="88.5" width="2" height="58" rx="1"/><g class="co co1 a"><text class="big" x="576" y="122">&#x430;</text><text class="neq" x="594" y="121">&#x2260;</text><text class="big" x="610" y="122">a</text><text class="cp" x="634" y="122">U+0430 / U+0061</text><text class="t" x="576" y="142">Cyrillic letter. Latin lookalike.</text></g>

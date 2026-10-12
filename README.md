@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo/pylos.svg" alt="pylos-mcp logo, an envelope with a keyhole in its flap" width="120">
+  <img src="assets/logo/pylos.svg" alt="pylos-mcp logo, an envelope with a keyhole in its flap" width="128">
 </p>
 
 <h1 align="center">pylos-mcp</h1>
