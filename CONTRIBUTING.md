@@ -13,11 +13,19 @@ pylos-mcp is small on purpose, and the security posture in the README's "What th
 
 Contributions that fit the project and are welcome, roughly in order of usefulness:
 
-- OAuth 2 authentication (the seam exists: imapflow accepts an access token where the password goes today)
+- OAuth 2 authentication for providers beyond Outlook and Microsoft 365
 - Multiple accounts in one server process
-- Reply threading, with References and In-Reply-To on drafts
 - Richer pagination for large mailboxes
 
 ## Development
 
-The Development section of the README covers setup. `npm test` must pass offline and `npm run test:integration` must pass against the container.
+```
+npm install
+npm test                  # unit and MCP layer tests, entirely offline
+npm run test:integration  # starts a disposable local Dovecot container, tests against it, tears it down
+npm run build
+```
+
+No test in this project connects to a real mailbox, in development or in CI. The integration run seeds its own Dovecot container with made up messages and removes it when finished.
+
+`npm test` must pass offline and `npm run test:integration` must pass against the container.

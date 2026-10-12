@@ -60,10 +60,6 @@ markers and on a reminder line after the closing one. Content cannot start a
 marker, and a sender who types a lookalike marker cannot know the tag it would
 need.
 
-The mixed-script warning knows only Cyrillic and Greek letters that look like
-Latin ones. Fullwidth Latin and the mathematical alphanumeric letters are
-outside it, the same tripwire stance the other detectors take.
-
 HTML nested deeper than 500 levels is cut at that depth and marked as omitted.
 Real mail stays far below it, and the parsers fail well above it.
 
@@ -92,6 +88,73 @@ Sieve write access is excluded rather than guarded because scanning uploaded
 scripts for dangerous commands would only be safe if this project's parser
 agreed with the mail server's parser exactly. Any disagreement between the two
 is a bypass, so write access is not offered at all.
+
+## Suspicion warnings
+
+Each detector has its own switch in the [configuration
+reference](README.md#configuration-reference). Detectors add warnings without
+withholding the message. They can miss suspicious content or flag legitimate
+mail.
+
+### Hidden text
+
+Text in the HTML body concealed with the common CSS tricks, such as
+`display:none`, invisible or tiny fonts, text matching its background,
+positioning off screen and `aria-hidden`. It checks inline styles and
+attributes, a tripwire rather than a rendering engine. Newsletters
+legitimately hide short preview text, so the warning fires at 100 hidden
+characters, after stripping invisible characters and collapsing whitespace. A
+matching instruction phrase or qualifying encoded run warns below that floor
+when its detector is enabled. `STRIP_HIDDEN_TEXT=true` drops all detected
+hidden text from the body, even below the warning threshold, with a note of
+how much went. It requires `FLAG_HIDDEN_TEXT=true`.
+
+### Instruction patterns
+
+A deliberately small set of phrases that address an AI, like "ignore previous
+instructions", kept small so that an inbox merely talking about AI stays
+quiet. Subjects, sender lines and attachment names are checked as well as the
+body, and extra spaces or line breaks inside a phrase do not hide it.
+`FLAG_EXTRA_PATTERNS` adds your own.
+
+### Encoded blobs
+
+Long runs of base64 or hex in the body, reported with their length and never
+decoded. The thresholds are 512 characters for base64 and 256 for hex. Line
+breaks may occur within a run and do not count toward its length. Spaces break
+a run. Only the longest run is checked, so a longer base64 run below its
+threshold can hide a shorter hex run that would qualify.
+
+### Sender mismatch
+
+A Reply-To on a different domain than From, or a From display name carrying an
+address on another domain. Subdomains count as the same domain, and the
+Reply-To address is shown inside the fence, so the model can see where a reply
+would actually go.
+
+### Mixed scripts
+
+Words mixing Latin letters with Cyrillic or Greek ones drawn to look like
+them, such as a "paypal" spelled with a Cyrillic а. Only lookalike letters
+count, so units like `μm` and ordinary Russian or Greek text stay quiet.
+Fullwidth Latin and the mathematical alphanumeric letters are outside this
+detector.
+
+### DMARC failure
+
+Your mail server checks whether a message really comes from the domain in its
+From line and records the result in the message's headers. When that check
+failed, `dmarc_fail` says so. Only a header carrying your provider's own
+server name counts, and the topmost one with a DMARC result wins, since your
+provider adds its header above anything the sender wrote. The presets know
+that name for Gmail, Outlook and Microsoft 365, mailbox.org, GMX, Posteo and
+Fastmail, and `AUTHSERV_ID` sets it elsewhere.
+
+`AUTHSERV_ID` accepts server names separated by commas and replaces the
+preset. A name starting with a dot matches any server name ending in it. With
+no trusted names, `dmarc_fail` never fires. Trust selection relies on your
+receiving server removing inbound headers that claim its own name before
+adding its result.
 
 ## Testing policy
 
