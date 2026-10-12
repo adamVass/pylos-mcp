@@ -2,6 +2,13 @@
 
 Notable changes to pylos-mcp. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.0.1] - 2026-10-12
+
+### Changed
+
+- The README is shorter and explains the lethal trifecta, and which of its three parts pylos leaves out. Outlook setup moved to `docs/providers.md`, the details of each suspicion warning to SECURITY.md, and development notes to CONTRIBUTING.md.
+- A new logo, in the README and as the icon clients and the Claude Desktop bundle show.
+
 ## [1.0.0] - 2026-10-11
 
 The first stable release. SECURITY.md says what stays stable within 1.x and which versions get security fixes.
@@ -158,6 +165,7 @@ A configuration that loaded on 0.2.0 can now fail at startup, if `SEND_ALLOWLIST
 - Warnings for hidden text, instruction-like phrases and long encoded runs.
 - Provider presets for Gmail, iCloud, Yahoo, GMX, Fastmail, mailbox.org and Posteo.
 
+[1.0.1]: https://github.com/adamVass/pylos-mcp/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/adamVass/pylos-mcp/compare/v0.6.0...v1.0.0
 [0.6.0]: https://github.com/adamVass/pylos-mcp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/adamVass/pylos-mcp/compare/v0.4.1...v0.5.0
