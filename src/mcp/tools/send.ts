@@ -24,7 +24,8 @@ const CONFIRM_TIMEOUT_MS = 10 * 60_000
 
 function reviewClause(sendConfirm: boolean): string {
   return sendConfirm
-    ? 'The account owner is shown each message in a confirmation dialog and it is sent only if they accept'
+    ? 'the account owner is shown each message in a confirmation dialog and it is sent only if they accept. ' +
+        'A client that cannot show the dialog has every send refused'
     : 'no one reviews it first'
 }
 

@@ -138,7 +138,7 @@ These limits are enforced by the server.
 - Deleting moves a message to Trash. There is no expunge or permanent delete. A server that cannot move messages is refused. What your provider later does with Trash is up to the provider.
 - Sieve access stays read only. No tool writes filter rules, which can forward, reply and notify even after you revoke the app password or uninstall this server.
 
-Sending stays closed with `send` on until `SEND_ALLOWLIST` names recipients. It accepts single addresses, domains as `*@example.com`, or `*` alone for anyone. With no allowlist, the refusal explains how to allow specific recipients or anyone. `SEND_CONFIRM=true` adds a confirmation dialog before every send, showing the recipients, subject, attachments and the whole message. It needs a client that supports MCP elicitation, and other clients are refused, so use drafts there. Allowing anyone without it lets the assistant write to anyone unasked, the third part of the lethal trifecta. See [SECURITY.md](https://github.com/adamVass/pylos-mcp/blob/main/SECURITY.md) for the design notes.
+Sending stays closed with `send` on until `SEND_ALLOWLIST` names recipients. It accepts single addresses, domains as `*@example.com`, or `*` alone for anyone. With no allowlist, the refusal explains how to allow specific recipients or anyone. `SEND_CONFIRM=true` adds a confirmation dialog before every send, showing the recipients, subject, attachments and the whole message. It needs a client that supports MCP elicitation, and other clients are refused, so use drafts there. Claude Desktop does not show these dialogs yet (October 2026). Allowing anyone without it lets the assistant write to anyone unasked, the third part of the lethal trifecta. See [SECURITY.md](https://github.com/adamVass/pylos-mcp/blob/main/SECURITY.md) for the design notes.
 
 ## Suspicion warnings
 
@@ -190,7 +190,7 @@ All configuration is environment variables. They are checked when the server sta
 | `SEND_SESSION_CAP` | `5` | Successful `send_email` calls allowed per server run, counted again from zero after a restart. |
 | `SEND_SAVE_COPY` | `true` | Save a copy of each sent message to the Sent folder, marked read. Turn off for providers that already file sent mail themselves (Gmail does), which would otherwise show duplicates. |
 | `SEND_ALLOWLIST` | none (sending closed) | Addresses or `*@domain` patterns separated by commas, or `*` alone to allow anyone. With `send` enabled and no value set, every send is refused and the refusal explains this variable. An explicitly empty value also allows nobody. An entry that could never match, such as a bare domain, fails at startup. |
-| `SEND_CONFIRM` | `false` | Show each message in a confirmation dialog before it is sent, and send it only if you accept. Needs a client that supports MCP elicitation. Sends from other clients are refused. |
+| `SEND_CONFIRM` | `false` | Show each message in a confirmation dialog before it is sent, and send it only if you accept. Needs a client that supports MCP elicitation, which Claude Desktop does not yet. Sends from other clients are refused. |
 | `DRAFTS_NO_RECIPIENTS` | `false` | When `true`, `create_draft` rejects `to` and `cc` entirely. Drafts carry no addressing and get it added later in your mail client. |
 | `FLAG_HIDDEN_TEXT` | `true` | Warn when message HTML hides text with inline styles or `aria-hidden`. |
 | `FLAG_INSTRUCTION_PATTERNS` | `true` | Warn when the body, subject, sender line or attachment names contain phrases addressing an AI. |

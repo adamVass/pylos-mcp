@@ -509,7 +509,9 @@ it.each([
   expect(shown).toEqual([renderConfirmation(PROPOSAL)])
   expect(answered).toBe(expected)
   const tool = (await connected.listTools()).tools.find((t) => t.name === 'send_email')
-  expect(tool?.description).toMatch(/confirmation dialog and it is sent only if they accept/)
+  expect(tool?.description).toContain(
+    'cannot be recalled, and the account owner is shown each message in a confirmation dialog and it is sent only if they accept. A client that cannot show the dialog has every send refused. Prefer create_draft',
+  )
 })
 
 it('the dialog waits ten minutes for an answer, not the SDK default of one', async () => {
