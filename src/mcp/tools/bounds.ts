@@ -55,8 +55,14 @@ export const replyRef = z.object({
   uid: uid.describe('Uid of the message being answered.'),
 })
 
+export const quoteOriginal = z
+  .boolean()
+  .optional()
+  .describe('Add the original below the body as a quote. Needs in_reply_to.')
+
 export const REPLY_NOTE =
-  'To reply, pass in_reply_to with the original\'s folder and uid. A subject starting with "Re:" does not thread on its own.'
+  'To reply, pass in_reply_to with the original\'s folder and uid. A subject starting with "Re:" does not thread on its own. ' +
+  'Set quote_original to add the original below the reply as a quote, allowed only when every recipient was on the original.'
 
 type AttachmentRef = z.infer<typeof attachment>
 

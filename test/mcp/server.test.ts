@@ -352,14 +352,15 @@ it('DRAFTS_NO_RECIPIENTS removes to/cc from the schema and rejects them if sent 
   expect(calls.createDraft).toBeUndefined()
 })
 
-it('create_draft passes in_reply_to through and names the original in the result', async () => {
+it('create_draft passes in_reply_to and quote_original through and names the original in the result', async () => {
   const { client, calls } = await startServer()
   const { text } = await call(client, 'create_draft', {
     subject: 'Re: s',
     body: 'b',
     in_reply_to: { folder: 'INBOX', uid: 42 },
+    quote_original: true,
   })
-  expect(calls.createDraft?.[0]).toMatchObject({ inReplyTo: { folder: 'INBOX', uid: 42 } })
+  expect(calls.createDraft?.[0]).toMatchObject({ inReplyTo: { folder: 'INBOX', uid: 42 }, quoteOriginal: true })
   expect(text).toBe(
     'Draft saved to Drafts (uid 42) as a reply to INBOX uid 42. Recipients: none. Add them in your mail client before sending.',
   )
@@ -455,15 +456,16 @@ it('send_email reports the recipients and how much of the session budget is left
   expect(calls.sendEmail?.[0]).toMatchObject({ to: ['a@x.example'], subject: 's', body: 'b' })
 })
 
-it('send_email passes in_reply_to through and names the original in the result', async () => {
+it('send_email passes in_reply_to and quote_original through and names the original in the result', async () => {
   const { client, calls } = await startServer(SEND_ENV)
   const { text } = await call(client, 'send_email', {
     to: ['a@x.example'],
     subject: 'Re: s',
     body: 'b',
     in_reply_to: { folder: 'INBOX', uid: 42 },
+    quote_original: true,
   })
-  expect(calls.sendEmail?.[0]).toMatchObject({ inReplyTo: { folder: 'INBOX', uid: 42 } })
+  expect(calls.sendEmail?.[0]).toMatchObject({ inReplyTo: { folder: 'INBOX', uid: 42 }, quoteOriginal: true })
   expect(text).toContain('as a reply to INBOX uid 42')
 })
 

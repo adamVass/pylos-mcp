@@ -54,16 +54,7 @@ export async function getEmail(
       ...(authservIds.length > 0 && { bodyParts: [HEADER_PART] }),
     })
     const parts = leafParts(message.bodyStructure)
-    // the listing keys off this structural choice, as unknownPart does, so the two never disagree
-    const structuralBody = chooseBodyPart(parts)
-    let bodyPart = structuralBody
-    let body = bodyPart ? await downloadText(client, uid, bodyPart, maxBodyKb) : NO_BODY
-    // some senders ship an empty plain alternative and put the message in the html one
-    const twin = bodyPart?.node.type === 'text/plain' && body.text.trim() === '' ? htmlTwin(bodyPart, parts) : undefined
-    if (twin) {
-      bodyPart = twin
-      body = await downloadText(client, uid, twin, maxBodyKb)
-    }
+    const body = await readBody(client, uid, parts, maxBodyKb)
     const replyTo = message.envelope?.replyTo ?? []
 
     return {
@@ -82,13 +73,34 @@ export async function getEmail(
       subject: makeUntrusted(message.envelope?.subject ?? ''),
       body: makeUntrusted(body.text),
       bodyCutShort: body.cutShort,
-      bodyIsHtml:
-        bodyPart?.node.type === 'text/html' ||
-        (bodyPart?.node.type === 'text/plain' && isHtmlDocument(body.text, body.cutShort)),
-      attachments: parts.filter((part) => isListed(part, structuralBody)).map(toAttachment),
+      bodyIsHtml: body.isHtml,
+      // the listing keys off the structural choice, as unknownPart does, so the two never disagree
+      attachments: parts.filter((part) => isListed(part, chooseBodyPart(parts))).map(toAttachment),
       dmarcFailed: trustedDmarcFailed(message.headers ?? Buffer.alloc(0), authservIds),
     }
   })
+}
+
+/** shared with quoting a reply, so the quote is the body get_email shows */
+export async function readBody(
+  client: ImapFlow,
+  uid: number,
+  parts: MessagePart[],
+  maxBodyKb: number,
+): Promise<BodyText & { isHtml: boolean }> {
+  let part = chooseBodyPart(parts)
+  let body = part ? await downloadText(client, uid, part, maxBodyKb) : NO_BODY
+  // some senders ship an empty plain alternative and put the message in the html one
+  const twin = part?.node.type === 'text/plain' && body.text.trim() === '' ? htmlTwin(part, parts) : undefined
+  if (twin) {
+    part = twin
+    body = await downloadText(client, uid, twin, maxBodyKb)
+  }
+  return {
+    ...body,
+    isHtml:
+      part?.node.type === 'text/html' || (part?.node.type === 'text/plain' && isHtmlDocument(body.text, body.cutShort)),
+  }
 }
 
 // imapflow fetches an attachment 64 kB per round trip by default, about 500 trips

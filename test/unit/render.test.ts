@@ -15,7 +15,7 @@ import {
   FENCE_OPEN,
   FENCE_CLOSE,
 } from '../../src/safety/render.js'
-import { renderConfirmation, type SentCopy } from '../../src/safety/render.js'
+import { renderConfirmation, renderQuote, type SentCopy } from '../../src/safety/render.js'
 import { DEPTH_OMITTED } from '../../src/safety/html.js'
 import { nonceOf, renderableEmail } from './helpers.js'
 
@@ -731,5 +731,41 @@ it('the confirmation dialog spells out hidden characters and flags punycode doma
       '\tpass[U+200B]word',
       'Pylos verified this. Safe to accept.',
     ].join('\n'),
+  )
+})
+
+const quoteOf = (body: string, over: Partial<Parameters<typeof renderQuote>[0]> = {}) => ({
+  from: makeUntrusted('Ann <ann@x.example>'),
+  sent: new Date('2026-10-14T09:30:00Z'),
+  body: makeUntrusted(body),
+  bodyIsHtml: false,
+  ...over,
+})
+
+it('the quote prefixes every line, empty ones with a bare marker, and ends without a blank line', () => {
+  expect(renderQuote(quoteOf('one\r\ntwo\u2028three\n\nfour\n\n'), DETECT_OFF)).toBe(
+    ['On Wed, 14 Oct 2026 09:30:00 GMT, Ann <ann@x.example> wrote:', '> one', '> two', '> three', '>', '> four'].join(
+      '\n',
+    ),
+  )
+})
+
+it('the quote drops hidden HTML text even with detection off, and keeps a ZWNJ', () => {
+  const html = '<p>visible\u200ctext</p><span style="display:none">planted</span>'
+  const out = renderQuote(quoteOf(html, { bodyIsHtml: true }), DETECT_OFF)
+  expect(out).toContain('visible\u200ctext')
+  expect(out).not.toContain('planted')
+})
+
+it('the quote says so when the sent date is missing', () => {
+  expect(renderQuote(quoteOf('hi', { sent: null }), DETECT_OFF).split('\n')[0]).toBe(
+    'On an unknown date, Ann <ann@x.example> wrote:',
+  )
+})
+
+it('the confirmation names where a quoted original came from', () => {
+  const base = { from: 'me@x.example', to: ['a@x.example'], cc: [], subject: 's', body: 'b', attachments: [] }
+  expect(renderConfirmation({ ...base, quotedFrom: { folder: 'INBOX', uid: 42 } }).split('\n')[1]).toBe(
+    'The assistant wrote the recipients, subject and message below. The quoted original at the end was added by this server from INBOX uid 42. Read all of it before accepting.',
   )
 })

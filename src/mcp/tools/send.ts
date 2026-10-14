@@ -7,7 +7,7 @@ import type { CoreApi } from '../../core/api.js'
 import type { Confirm } from '../../core/smtp.js'
 import { renderConfirmation, renderSent } from '../../safety/render.js'
 import { run } from '../run.js'
-import { address, attachments, MAX_RECIPIENTS, REPLY_NOTE, replyRef, toPartRefs } from './bounds.js'
+import { address, attachments, MAX_RECIPIENTS, quoteOriginal, REPLY_NOTE, replyRef, toPartRefs } from './bounds.js'
 
 export function sendPolicyClause(allowlist: string[] | undefined): string {
   if (allowlist === undefined) {
@@ -60,6 +60,7 @@ export function registerSendTools(server: McpServer, cfg: Config, core: CoreApi)
         body: z.string(),
         attachments,
         in_reply_to: replyRef.optional(),
+        quote_original: quoteOriginal,
       },
       // the only tool whose effect cannot be undone from a mail client, so it
       // carries both hints a client would use to insist on a human first
@@ -80,6 +81,7 @@ export function registerSendTools(server: McpServer, cfg: Config, core: CoreApi)
             body: args.body,
             attachments: toPartRefs(args.attachments),
             inReplyTo: args.in_reply_to,
+            quoteOriginal: args.quote_original,
           },
           ownerConfirmation(server, extra),
         )

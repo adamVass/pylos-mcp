@@ -310,6 +310,20 @@ describe('createDraft against a local Dovecot container', () => {
     expect(flags).not.toContain('\\Seen')
   })
 
+  itIntegration('a quoted reply draft carries the original below the body', async () => {
+    const result = await draft({
+      subject: 'Re: the original',
+      body: 'my answer',
+      to: ['sender@x.example'],
+      inReplyTo: { folder: FOLDER, uid: uidOriginal },
+      quoteOriginal: true,
+    })
+
+    const parsed = await simpleParser(await sourceOf(seeder!, DRAFTS, result.uid!))
+    expect(parsed.inReplyTo).toBe('<original@x.example>')
+    expect(parsed.text).toMatch(/^my answer\n\nOn .+ GMT, Sender Name <sender@x\.example> wrote:\n> please reply\n?$/)
+  })
+
   itIntegration('a reply to a message that is gone saves nothing', async () => {
     const before = await draftCount()
     await expect(

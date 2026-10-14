@@ -5,13 +5,14 @@ import type { Config } from '../../config.js'
 import type { CoreApi } from '../../core/api.js'
 import { renderDraftSaved } from '../../safety/render.js'
 import { run } from '../run.js'
-import { address, attachments, MAX_RECIPIENTS, REPLY_NOTE, replyRef, toPartRefs } from './bounds.js'
+import { address, attachments, MAX_RECIPIENTS, quoteOriginal, REPLY_NOTE, replyRef, toPartRefs } from './bounds.js'
 
 const base = {
   subject: z.string(),
   body: z.string(),
   attachments,
   in_reply_to: replyRef.optional(),
+  quote_original: quoteOriginal,
 }
 
 const recipients = {
@@ -41,6 +42,7 @@ export function registerDraftTools(server: McpServer, cfg: Config, core: CoreApi
         cc: args.cc,
         attachments: toPartRefs(args.attachments),
         inReplyTo: args.in_reply_to,
+        quoteOriginal: args.quote_original,
       })
       return renderDraftSaved(saved.folder, saved.uid, saved.recipients, args.in_reply_to)
     })

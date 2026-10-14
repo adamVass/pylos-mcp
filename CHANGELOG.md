@@ -4,6 +4,14 @@ Notable changes to pylos-mcp. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+
+- `quote_original` on `create_draft` and `send_email` adds the original message below a reply, the way mail clients quote it. The server reads the original itself and leaves out text its HTML hid. It refuses when a recipient was not on the original, or when the original is too long to quote whole. Off by default. With `SEND_CONFIRM=true`, the dialog shows the quote and which message it came from.
+
+### Changed
+
+- A message body for `create_draft` and `send_email` can be at most 64 kB, quote included. Longer bodies were accepted before and are now refused, since a confirmation dialog that long is not read in full.
+
 ## [1.1.0] - 2026-10-14
 
 ### Added

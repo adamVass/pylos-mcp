@@ -1,10 +1,10 @@
 import type { Readable } from 'node:stream'
 import MailComposer from 'nodemailer/lib/mail-composer/index.js'
 import type { Config } from '../config.js'
-import type { ProposedAttachment } from '../safety/render.js'
+import { renderQuote, type ProposedAttachment } from '../safety/render.js'
 import type { ImapSession } from './client.js'
 import { ToolError } from '../errors.js'
-import { readReplyHeaders, type ReplyRef } from './reply.js'
+import { readQuotedOriginal, readReplyHeaders, type ReplyHeaders, type ReplyRef } from './reply.js'
 import {
   DOWNLOAD_CHUNK_BYTES,
   capBytes,
@@ -27,6 +27,12 @@ export interface DraftArgs {
   cc?: string[]
   attachments?: PartRef[]
   inReplyTo?: ReplyRef
+  quoteOriginal?: boolean
+}
+
+export interface PreparedBody {
+  body: string
+  thread?: ReplyHeaders
 }
 
 export interface DraftResult {
@@ -40,6 +46,9 @@ interface ComposedAttachment {
   content: Buffer
   contentType: string
 }
+
+// a person reads the whole body in a SEND_CONFIRM dialog, and real mail is a few kB
+const MAX_OUTGOING_BODY_KB = 64
 
 const SOURCE_GONE = 'the source message of an attachment is no longer available. It may have been moved or deleted'
 
@@ -97,7 +106,8 @@ export async function createDraft(
     throw new ToolError('policy', 'drafts are configured to carry no recipients (DRAFTS_NO_RECIPIENTS=true)')
   }
 
-  const { message, release } = await composeFromArgs(session, cfg, args, budget)
+  const prepared = await prepareBody(session, cfg, args)
+  const { message, release } = await composeFromArgs(session, cfg, args, prepared, budget)
   try {
     const folder = await session.specialUse('\\Drafts', 'Drafts')
 
@@ -125,25 +135,54 @@ export async function createDraft(
 }
 
 /**
- * The reply headers are read before any attachment is fetched, so an unknown
- * original costs no download. Attachments are fetched before composing, because
- * a message that went out without one of them cannot be recalled.
+ * Runs before any attachment is fetched, so an unknown original costs no
+ * download, and before a SEND_CONFIRM dialog, so the body shown is the body sent.
  */
+export async function prepareBody(session: ImapSession, cfg: Config, args: DraftArgs): Promise<PreparedBody> {
+  refuseLongBody(args.body)
+  if (!args.inReplyTo) {
+    if (args.quoteOriginal) {
+      throw new ToolError(
+        'policy',
+        'quote_original needs in_reply_to, the message being answered. Nothing was saved or sent',
+      )
+    }
+    return { body: args.body }
+  }
+  if (!args.quoteOriginal) return { body: args.body, thread: await readReplyHeaders(session, args.inReplyTo) }
+
+  const recipients = [...(args.to ?? []), ...(args.cc ?? [])]
+  const { headers, quote } = await readQuotedOriginal(session, args.inReplyTo, recipients, cfg.user)
+  const body = `${args.body}\n\n${renderQuote(quote, cfg.detect)}`
+  refuseLongBody(body)
+  return { body, thread: headers }
+}
+
+function refuseLongBody(body: string): void {
+  const bytes = Buffer.byteLength(body)
+  if (bytes <= MAX_OUTGOING_BODY_KB * 1000) return
+  throw new ToolError(
+    'cap_exceeded',
+    `the message body is ${Math.ceil(bytes / 1000)} kB, over the ${MAX_OUTGOING_BODY_KB} kB limit for an outgoing message. Nothing was saved or sent`,
+  )
+}
+
+/** attachments are fetched before composing, because a message that went out without one cannot be recalled */
 export async function composeFromArgs(
   session: ImapSession,
   cfg: Config,
   args: DraftArgs,
+  prepared: PreparedBody,
   budget: ComposeBudget,
 ): Promise<{ message: Buffer; release: () => void }> {
-  const thread = args.inReplyTo ? await readReplyHeaders(session, args.inReplyTo) : undefined
   const { attachments, release } = await collectAttachments(session, cfg, args.attachments ?? [], budget)
   try {
     const message = await composeMessage(cfg, {
-      ...thread,
+      ...prepared.thread,
       to: args.to,
       cc: args.cc,
       subject: args.subject,
-      body: args.body,
+      body: prepared.body,
       attachments,
     })
     return { message, release }

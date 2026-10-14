@@ -6,7 +6,14 @@ import { APP_PASSWORD_ADVICE, TLS_CA_ADVICE, ToolError, errorCode } from '../err
 import type { SendProposal, SentCopy } from '../safety/render.js'
 import type { ImapSession } from './client.js'
 import { checkAllowlist } from './address.js'
-import { composeFromArgs, describeAttachments, type ComposeBudget, type PartRef } from './draft.js'
+import {
+  composeFromArgs,
+  describeAttachments,
+  prepareBody,
+  type ComposeBudget,
+  type PartRef,
+  type PreparedBody,
+} from './draft.js'
 import { markAnswered } from './mailbox-ops.js'
 import type { ReplyRef } from './reply.js'
 import { secureOptions } from './tls.js'
@@ -31,6 +38,7 @@ export interface SendArgs {
   body: string
   attachments?: PartRef[]
   inReplyTo?: ReplyRef
+  quoteOriginal?: boolean
 }
 
 /** resolves true only when the owner accepted, and never for a dialog that failed or timed out */
@@ -78,10 +86,11 @@ export async function sendEmail(
     )
   }
 
+  let confirmed: PreparedBody | undefined
   if (cfg.sendConfirm) {
     // never ask the owner about a send the cap would refuse anyway
     refuseAtCap(cfg, state)
-    await confirmSend(session, cfg, state, args, confirm)
+    confirmed = await confirmSend(session, cfg, state, args, confirm)
   }
 
   // Reserved against the cap, not merely counted after the fact. The check and
@@ -96,7 +105,8 @@ export async function sendEmail(
     const reserved = await (async () => {
       try {
         // the allowlist and cap settled before any IMAP work, and no relay socket opens before this
-        const composed = await composeFromArgs(session, cfg, args, budget)
+        const prepared = confirmed ?? (await prepareBody(session, cfg, args))
+        const composed = await composeFromArgs(session, cfg, args, prepared, budget)
         release = composed.release
         // transmitted and filed as the same bytes, so the Sent copy is exactly what recipients received, Message-ID included
         const { message } = composed
@@ -160,8 +170,10 @@ function refuseAtCap(cfg: Config, state: SendState): void {
 }
 
 /**
- * Attachments are described from the mailbox but not downloaded, so nothing is
- * fetched or held against the compose budget while the dialog waits on a person.
+ * Both refusals come before any IMAP work, and `confirming` is held across
+ * preparing the body, so only one quoted original is in memory at a time.
+ * Attachments are described but not downloaded, so nothing is held against the
+ * compose budget while the dialog waits on a person.
  */
 async function confirmSend(
   session: ImapSession,
@@ -169,7 +181,7 @@ async function confirmSend(
   state: SendState,
   args: SendArgs,
   confirm: Confirm | undefined,
-): Promise<void> {
+): Promise<PreparedBody> {
   if (!confirm) {
     throw new ToolError(
       'policy',
@@ -184,14 +196,16 @@ async function confirmSend(
   }
   state.confirming = true
   try {
+    const prepared = await prepareBody(session, cfg, args)
     const proposal: SendProposal = {
       from: cfg.user,
       to: args.to,
       cc: args.cc ?? [],
       subject: args.subject,
-      body: args.body,
+      body: prepared.body,
       attachments: await describeAttachments(session, cfg, args.attachments ?? []),
       inReplyTo: args.inReplyTo,
+      quotedFrom: args.quoteOriginal ? args.inReplyTo : undefined,
     }
     const accepted = await confirm(proposal).catch(() => false)
     if (!accepted) {
@@ -200,6 +214,7 @@ async function confirmSend(
         'the account owner did not accept this message in the confirmation dialog, so nothing was sent. Do not send it again unless they ask',
       )
     }
+    return prepared
   } finally {
     state.confirming = false
   }

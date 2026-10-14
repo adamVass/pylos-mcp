@@ -1,13 +1,19 @@
+import type { MessageEnvelopeObject } from 'imapflow'
 import { ToolError } from '../errors.js'
+import type { QuoteSource } from '../safety/render.js'
+import { makeUntrusted } from '../safety/untrusted.js'
+import { formatAddress } from './address.js'
 import type { ImapSession } from './client.js'
 import { HEADER_PART, headerValues, wasCut } from './headers.js'
+import { readBody } from './message.js'
+import { leafParts } from './parts.js'
 
 export interface ReplyRef {
   folder: string
   uid: number
 }
 
-interface ReplyHeaders {
+export interface ReplyHeaders {
   inReplyTo: string
   references: string[]
 }
@@ -15,6 +21,8 @@ interface ReplyHeaders {
 // RFC 5322 §3.6.4 lets a long chain drop its middle, so the root and the latest stay
 const MAX_REFERENCES = 20
 const MAX_ID_CHARS = 250
+// raw, not converted: Outlook HTML carries far more markup than text
+const QUOTE_READ_KB = 512
 
 const ORIGINAL_GONE = 'the message to reply to was not found. It may have been moved or deleted'
 const NO_MESSAGE_ID =
@@ -58,4 +66,58 @@ export async function readReplyHeaders(session: ImapSession, ref: ReplyRef): Pro
   if (!original) throw new ToolError('not_found', ORIGINAL_GONE)
 
   return threadHeaders(original.headers ?? Buffer.alloc(0))
+}
+
+/**
+ * The participant check narrows accidental disclosure and is not a gate: the
+ * envelope is the original sender's text, and SEND_ALLOWLIST stays the gate.
+ */
+export async function readQuotedOriginal(
+  session: ImapSession,
+  ref: ReplyRef,
+  recipients: string[],
+  self: string,
+): Promise<{ headers: ReplyHeaders; quote: QuoteSource }> {
+  return session.withMailbox(ref.folder, async (client) => {
+    const original = await client.fetchOne(
+      String(ref.uid),
+      { envelope: true, bodyStructure: true, bodyParts: [HEADER_PART] },
+      { uid: true },
+    )
+    if (!original) throw new ToolError('not_found', ORIGINAL_GONE)
+    const headers = threadHeaders(original.headers ?? Buffer.alloc(0))
+    refuseOutsiders(recipients, original.envelope, self)
+
+    const body = await readBody(client, original.uid, leafParts(original.bodyStructure), QUOTE_READ_KB)
+    if (body.cutShort) {
+      throw new ToolError(
+        'cap_exceeded',
+        `the original is longer than ${QUOTE_READ_KB} kB, too long to quote whole. Nothing was saved or sent. Leave quote_original off and quote the relevant part in the body`,
+      )
+    }
+    return {
+      headers,
+      quote: {
+        from: makeUntrusted(formatAddress(original.envelope?.from?.[0])),
+        sent: original.envelope?.date ?? null,
+        body: makeUntrusted(body.text),
+        bodyIsHtml: body.isHtml,
+      },
+    }
+  })
+}
+
+/** names only the caller's recipients, never the envelope, which is sender text */
+function refuseOutsiders(recipients: string[], envelope: MessageEnvelopeObject | undefined, self: string): void {
+  const onOriginal = [envelope?.from, envelope?.to, envelope?.cc, envelope?.replyTo]
+    .flatMap((list) => list ?? [])
+    .map((a) => a.address?.toLowerCase())
+  const known = new Set([self.toLowerCase(), ...onOriginal])
+  const outside = recipients.filter((r) => !known.has(r.toLowerCase()))
+  if (outside.length > 0) {
+    throw new ToolError(
+      'policy',
+      `quote_original copies the original message, and these recipients were not on it: ${outside.join(', ')}. Nothing was saved or sent. Leave quote_original off, or quote the part they need in the body`,
+    )
+  }
 }

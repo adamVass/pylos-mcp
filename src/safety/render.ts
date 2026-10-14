@@ -421,6 +421,31 @@ export interface ProposedAttachment {
   uid: number
 }
 
+export interface QuoteSource {
+  from: UntrustedText
+  /** the Date header, which the sender wrote */
+  sent: Date | string | null
+  body: UntrustedText
+  bodyIsHtml: boolean
+}
+
+/** the attribution line and the `> ` quoted body, appended below a reply by core */
+export function renderQuote(q: QuoteSource, detect: DetectOptions): string {
+  const raw = readUntrusted(q.body)
+  // Hidden text is dropped for fidelity, since conversion would make it visible.
+  // No stripInvisible: people read this, and ZWNJ, ZWJ and variation selectors are real text.
+  const text = q.bodyIsHtml ? htmlToPlainText(inspectHtml(raw, { ...detect, stripHiddenText: true }).html) : raw
+  const lines = text
+    .replace(/\r\n?|[\u0085\u2028\u2029]/g, '\n')
+    .trimEnd()
+    .split('\n')
+    .map((l) => (l === '' ? '>' : `> ${l}`))
+  const sent = q.sent === null ? null : new Date(q.sent)
+  const date = sent && !Number.isNaN(sent.getTime()) ? sent.toUTCString() : 'an unknown date'
+  const from = presentLine(q.from) || 'the sender'
+  return [`On ${date}, ${from} wrote:`, ...lines].join('\n')
+}
+
 /** everything the account owner is shown before a send under SEND_CONFIRM */
 export interface SendProposal {
   from: string
@@ -430,6 +455,7 @@ export interface SendProposal {
   body: string
   attachments: ProposedAttachment[]
   inReplyTo?: MessageRef
+  quotedFrom?: MessageRef
 }
 
 // Shown to the account owner, not the model, so invisible and direction-changing
@@ -452,7 +478,9 @@ export function renderConfirmation(p: SendProposal): string {
   const lookalikes = [...p.to, ...p.cc].filter((a) => /(^|\.)xn--/i.test(a.split('@')[1] ?? ''))
   const lines = [
     'Send this email? It goes out only if you accept, and cannot be recalled.',
-    'The assistant wrote the recipients, subject and message below. Read all of it before accepting.',
+    p.quotedFrom
+      ? `The assistant wrote the recipients, subject and message below. The quoted original at the end was added by this server from ${line(p.quotedFrom.folder)} uid ${p.quotedFrom.uid}. Read all of it before accepting.`
+      : 'The assistant wrote the recipients, subject and message below. Read all of it before accepting.',
     '',
     `From: ${p.from}`,
     `To: ${p.to.map((a) => visible(a)).join(', ')}`,
