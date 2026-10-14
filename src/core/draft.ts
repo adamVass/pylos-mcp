@@ -1,6 +1,7 @@
 import type { Readable } from 'node:stream'
 import MailComposer from 'nodemailer/lib/mail-composer/index.js'
 import type { Config } from '../config.js'
+import type { ProposedAttachment } from '../safety/render.js'
 import type { ImapSession } from './client.js'
 import { ToolError } from '../errors.js'
 import { readReplyHeaders, type ReplyRef } from './reply.js'
@@ -201,6 +202,28 @@ export async function collectAttachments(
     claim.release()
     throw err
   }
+}
+
+/** names and declared sizes from the bodystructure, with the declared size cap applied and no download */
+export async function describeAttachments(
+  session: ImapSession,
+  cfg: Config,
+  refs: PartRef[],
+): Promise<ProposedAttachment[]> {
+  const described: ProposedAttachment[] = []
+  for (const ref of refs) {
+    const part = await session.withMailbox(ref.folder, (client) =>
+      resolvePartForDownload(client, ref.uid, ref.partId, cfg.maxAttachmentMb),
+    )
+    described.push({
+      filename: downloadName(part.node),
+      declaredBytes: part.node.size,
+      encoding: part.node.encoding,
+      folder: ref.folder,
+      uid: ref.uid,
+    })
+  }
+  return described
 }
 
 /**

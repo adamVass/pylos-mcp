@@ -79,6 +79,7 @@ describe('loadConfig', () => {
     expect(c.maxAttachmentMb).toBe(25)
     expect(c.sendSessionCap).toBe(5)
     expect(c.draftsNoRecipients).toBe(false)
+    expect(c.sendConfirm).toBe(false)
     expect(c.downloadDir.startsWith('/')).toBe(true) // ~ expanded
   })
   it('SEND_SAVE_COPY defaults on and rejects non-boolean values', () => {

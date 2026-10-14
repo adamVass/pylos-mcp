@@ -2,6 +2,12 @@
 
 Notable changes to pylos-mcp. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `SEND_CONFIRM=true` shows every message `send_email` would send in a confirmation dialog first, with its recipients, subject, attachments and whole body, and sends it only if you accept. It uses MCP elicitation, so clients that cannot show the dialog are refused and drafts remain the way to go there. Off by default.
+
 ## [1.0.1] - 2026-10-12
 
 ### Changed

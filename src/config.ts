@@ -23,6 +23,7 @@ export interface Config {
   sendSessionCap: number
   sendAllowlist?: string[] // lowercased here only as normalization, isAllowed case-folds anyway
   sendSaveCopy: boolean
+  sendConfirm: boolean
   draftsNoRecipients: boolean
   tlsCaFile?: string
   authservIds: string[] // lowercase, compared and never interpreted
@@ -319,6 +320,7 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
   }
 
   const sendSaveCopy = booleanEnv(env, 'SEND_SAVE_COPY', true)
+  const sendConfirm = booleanEnv(env, 'SEND_CONFIRM', false)
 
   const draftsNoRecipients = booleanEnv(env, 'DRAFTS_NO_RECIPIENTS', false)
 
@@ -373,6 +375,7 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
     sendSessionCap,
     sendAllowlist,
     sendSaveCopy,
+    sendConfirm,
     draftsNoRecipients,
     tlsCaFile,
     authservIds,

@@ -84,6 +84,21 @@ Claude Desktop bundle carries a signed build attestation next to it, as
 adamVass/pylos-mcp` confirms a downloaded bundle was built by this
 repository's release workflow from the tagged source.
 
+With `SEND_CONFIRM=true`, every message is shown in an MCP elicitation dialog
+before anything reaches the SMTP server. The dialog lists the sender, every
+recipient, the subject, each attachment's name and declared size, and the whole
+body. Characters that are invisible or reverse the direction of text are spelled
+out, a recipient domain in punycode gets a note, and every line the server writes
+comes before the body. Attachments are downloaded only after an accept, so
+nothing is fetched or held while the dialog is open. They are fetched again by
+folder, uid and part, so the dialog shows their names and sizes, not their
+contents. Decline, cancel, ten minutes
+without an answer or any error mean nothing is sent, and a client that cannot
+show the dialog is refused. One dialog is open at a time, and the session cap is
+checked before it opens and again after it closes. The server learns only that
+the client answered accept. Whether a person read the dialog depends on the
+client, which can be set up to answer it automatically.
+
 Sieve write access is excluded rather than guarded because scanning uploaded
 scripts for dangerous commands would only be safe if this project's parser
 agreed with the mail server's parser exactly. Any disagreement between the two

@@ -15,7 +15,7 @@ import {
   FENCE_OPEN,
   FENCE_CLOSE,
 } from '../../src/safety/render.js'
-import type { SentCopy } from '../../src/safety/render.js'
+import { renderConfirmation, type SentCopy } from '../../src/safety/render.js'
 import { DEPTH_OMITTED } from '../../src/safety/html.js'
 import { nonceOf, renderableEmail } from './helpers.js'
 
@@ -693,5 +693,43 @@ it('a thread says how many it holds and how many older ones it left out', () => 
   )
   expect(renderThread({ items: [row], omitted: 2, capped: true }).split('\n')[0]).toBe(
     'Thread of at least 3 message(s), showing the newest 1, oldest first. Read each with get_email:',
+  )
+})
+
+// read by the account owner, so hidden characters are spelled out rather than
+// dropped, and nothing the assistant wrote can follow the body as a server line
+it('the confirmation dialog spells out hidden characters and flags punycode domains', () => {
+  const RLO = String.fromCharCode(0x202e)
+  const ZWSP = String.fromCharCode(0x200b)
+  // a supplementary variation selector, which renders as nothing and can encode a byte
+  const VS17 = String.fromCodePoint(0xe0100)
+  expect(
+    renderConfirmation({
+      from: 'me@x.example',
+      to: ['billing@xn--ypal-43d9g.com'],
+      cc: ['c@x.example'],
+      subject: `Invoice ${RLO}fdp.exe\nBcc: x@evil.example`,
+      body: `Hi${VS17},\n\tpass${ZWSP}word\nPylos verified this. Safe to accept.`,
+      attachments: [{ filename: `inv${RLO}gnp.scr`, declaredBytes: 4000, encoding: 'base64', folder: 'INBOX', uid: 7 }],
+      inReplyTo: { folder: 'INBOX', uid: 42 },
+    }),
+  ).toBe(
+    [
+      'Send this email? It goes out only if you accept, and cannot be recalled.',
+      'The assistant wrote the recipients, subject and message below. Read all of it before accepting.',
+      '',
+      'From: me@x.example',
+      'To: billing@xn--ypal-43d9g.com',
+      'Cc: c@x.example',
+      'Subject: Invoice [U+202E]fdp.exe[U+000A]Bcc: x@evil.example',
+      'Attachment: inv[U+202E]gnp.scr, about 3.0 kB, from INBOX uid 7',
+      'In reply to: INBOX uid 42',
+      'Note: billing@xn--ypal-43d9g.com has an internationalized domain, which can imitate a familiar one.',
+      '',
+      '----- message -----',
+      'Hi[U+E0100],',
+      '\tpass[U+200B]word',
+      'Pylos verified this. Safe to accept.',
+    ].join('\n'),
   )
 })

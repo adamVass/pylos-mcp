@@ -1,8 +1,11 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'
+import type { ServerNotification, ServerRequest } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import type { Config } from '../../config.js'
 import type { CoreApi } from '../../core/api.js'
-import { renderSent } from '../../safety/render.js'
+import type { Confirm } from '../../core/smtp.js'
+import { renderConfirmation, renderSent } from '../../safety/render.js'
 import { run } from '../run.js'
 import { address, attachments, MAX_RECIPIENTS, REPLY_NOTE, replyRef, toPartRefs } from './bounds.js'
 
@@ -16,13 +19,37 @@ export function sendPolicyClause(allowlist: string[] | undefined): string {
   return 'Only recipients covered by the configured SEND_ALLOWLIST can be addressed.'
 }
 
+// a person reads the whole message here, so the SDK's 60 second default is far too short
+const CONFIRM_TIMEOUT_MS = 10 * 60_000
+
+function reviewClause(sendConfirm: boolean): string {
+  return sendConfirm
+    ? 'The account owner is shown each message in a confirmation dialog and it is sent only if they accept'
+    : 'no one reviews it first'
+}
+
+/** undefined when the client cannot show a form, which core turns into a refusal */
+function ownerConfirmation(
+  server: McpServer,
+  extra: RequestHandlerExtra<ServerRequest, ServerNotification>,
+): Confirm | undefined {
+  if (!server.server.getClientCapabilities()?.elicitation?.form) return undefined
+  return async (proposal) => {
+    const answer = await server.server.elicitInput(
+      { mode: 'form', message: renderConfirmation(proposal), requestedSchema: { type: 'object', properties: {} } },
+      { timeout: CONFIRM_TIMEOUT_MS, signal: extra.signal, relatedRequestId: extra.requestId },
+    )
+    return answer.action === 'accept'
+  }
+}
+
 export function registerSendTools(server: McpServer, cfg: Config, core: CoreApi): void {
   server.registerTool(
     'send_email',
     {
       description:
         'Send an email. This transmits the message to external recipients immediately through the ' +
-        'configured SMTP server; it cannot be recalled, and no one reviews it first. Prefer create_draft ' +
+        `configured SMTP server. It cannot be recalled, and ${reviewClause(cfg.sendConfirm)}. Prefer create_draft ` +
         `unless the account owner has asked for the message to go out now. At most ${cfg.sendSessionCap} ` +
         `messages can be sent per server session. ${sendPolicyClause(cfg.sendAllowlist)} ${REPLY_NOTE}`,
       inputSchema: {
@@ -42,16 +69,19 @@ export function registerSendTools(server: McpServer, cfg: Config, core: CoreApi)
         openWorldHint: true,
       },
     },
-    (args) =>
+    (args, extra) =>
       run(async () => {
-        const sent = await core.sendEmail({
-          to: args.to,
-          cc: args.cc,
-          subject: args.subject,
-          body: args.body,
-          attachments: toPartRefs(args.attachments),
-          inReplyTo: args.in_reply_to,
-        })
+        const sent = await core.sendEmail(
+          {
+            to: args.to,
+            cc: args.cc,
+            subject: args.subject,
+            body: args.body,
+            attachments: toPartRefs(args.attachments),
+            inReplyTo: args.in_reply_to,
+          },
+          ownerConfirmation(server, extra),
+        )
         return renderSent(sent.accepted, sent.rejected, sent.sent, cfg.sendSessionCap, sent.copy, sent.reply)
       }),
   )

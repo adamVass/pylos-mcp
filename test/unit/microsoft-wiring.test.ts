@@ -39,5 +39,5 @@ it('a sign-in request reaches the caller unchanged from IMAP and from SMTP', asy
   await expect(
     sendEmail(session, cfg, state, { to: ['a@x.example'], subject: 's', body: 'b' }, new ComposeBudget()),
   ).rejects.toBe(SIGN_IN)
-  expect(state).toEqual({ sent: 0, inFlight: 0 })
+  expect(state).toMatchObject({ sent: 0, inFlight: 0 })
 })

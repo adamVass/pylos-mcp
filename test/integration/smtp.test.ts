@@ -314,6 +314,19 @@ describe('sendEmail against an in-process SMTP server', () => {
     expect(state.inFlight).toBe(0)
   })
 
+  itIntegration('under SEND_CONFIRM, only a message the owner accepted reaches the relay', async () => {
+    const cfg = sendConfig({ SEND_CONFIRM: 'true' })
+    const args = { to: [ALLOWED], subject: 'confirmed', body: 'b' }
+    const confirmed = (answer: boolean) =>
+      sendEmail(idleSession(), cfg, new SendState(), args, new ComposeBudget(), async () => answer)
+
+    await expect(confirmed(false)).rejects.toThrow(/did not accept/)
+    expect(connections).toBe(0)
+
+    await confirmed(true)
+    expect(deliveries.map((d) => d.rcptTo)).toEqual([[ALLOWED]])
+  })
+
   itIntegration('a recipient the server refuses is named in the result, never silently dropped', async () => {
     const result = await send({
       to: [ALLOWED, REFUSED],

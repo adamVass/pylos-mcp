@@ -3,10 +3,10 @@
 import { createTransport } from 'nodemailer'
 import { passwordOf, type Config } from '../config.js'
 import { APP_PASSWORD_ADVICE, TLS_CA_ADVICE, ToolError, errorCode } from '../errors.js'
-import type { SentCopy } from '../safety/render.js'
+import type { SendProposal, SentCopy } from '../safety/render.js'
 import type { ImapSession } from './client.js'
 import { checkAllowlist } from './address.js'
-import { composeFromArgs, type ComposeBudget, type PartRef } from './draft.js'
+import { composeFromArgs, describeAttachments, type ComposeBudget, type PartRef } from './draft.js'
 import { markAnswered } from './mailbox-ops.js'
 import type { ReplyRef } from './reply.js'
 import { secureOptions } from './tls.js'
@@ -20,6 +20,8 @@ import { secureOptions } from './tls.js'
 export class SendState {
   sent = 0
   inFlight = 0
+  // one dialog at a time, so a model looping on send_email cannot stack them up
+  confirming = false
 }
 
 export interface SendArgs {
@@ -30,6 +32,9 @@ export interface SendArgs {
   attachments?: PartRef[]
   inReplyTo?: ReplyRef
 }
+
+/** resolves true only when the owner accepted, and never for a dialog that failed or timed out */
+export type Confirm = (proposal: SendProposal) => Promise<boolean>
 
 export interface SendResult {
   accepted: string[]
@@ -50,6 +55,7 @@ export async function sendEmail(
   state: SendState,
   args: SendArgs,
   budget: ComposeBudget,
+  confirm?: Confirm,
 ): Promise<SendResult> {
   const smtp = smtpTarget(cfg)
   const recipients = [...args.to, ...(args.cc ?? [])]
@@ -72,15 +78,16 @@ export async function sendEmail(
     )
   }
 
+  if (cfg.sendConfirm) {
+    // never ask the owner about a send the cap would refuse anyway
+    refuseAtCap(cfg, state)
+    await confirmSend(session, cfg, state, args, confirm)
+  }
+
   // Reserved against the cap, not merely counted after the fact. The check and
   // the reservation are one synchronous step with no await between them, which
   // is what makes them atomic on a single-threaded runtime.
-  if (state.sent + state.inFlight >= cfg.sendSessionCap) {
-    throw new ToolError(
-      'policy',
-      `session send cap reached (SEND_SESSION_CAP=${cfg.sendSessionCap}). Restart the server to send again`,
-    )
-  }
+  refuseAtCap(cfg, state)
   let release = (): void => {}
   state.inFlight += 1
 
@@ -140,6 +147,61 @@ export async function sendEmail(
     }
   } finally {
     release()
+  }
+}
+
+function refuseAtCap(cfg: Config, state: SendState): void {
+  if (state.sent + state.inFlight >= cfg.sendSessionCap) {
+    throw new ToolError(
+      'policy',
+      `session send cap reached (SEND_SESSION_CAP=${cfg.sendSessionCap}). Restart the server to send again`,
+    )
+  }
+}
+
+/**
+ * Attachments are described from the mailbox but not downloaded, so nothing is
+ * fetched or held against the compose budget while the dialog waits on a person.
+ */
+async function confirmSend(
+  session: ImapSession,
+  cfg: Config,
+  state: SendState,
+  args: SendArgs,
+  confirm: Confirm | undefined,
+): Promise<void> {
+  if (!confirm) {
+    throw new ToolError(
+      'policy',
+      'SEND_CONFIRM is on, and this client cannot show a confirmation dialog, so nothing was sent. Save the message with create_draft instead, or the account owner can set SEND_CONFIRM=false',
+    )
+  }
+  if (state.confirming) {
+    throw new ToolError(
+      'policy',
+      'another message is waiting for the account owner to confirm it. Try again once they have answered',
+    )
+  }
+  state.confirming = true
+  try {
+    const proposal: SendProposal = {
+      from: cfg.user,
+      to: args.to,
+      cc: args.cc ?? [],
+      subject: args.subject,
+      body: args.body,
+      attachments: await describeAttachments(session, cfg, args.attachments ?? []),
+      inReplyTo: args.inReplyTo,
+    }
+    const accepted = await confirm(proposal).catch(() => false)
+    if (!accepted) {
+      throw new ToolError(
+        'policy',
+        'the account owner did not accept this message in the confirmation dialog, so nothing was sent. Do not send it again unless they ask',
+      )
+    }
+  } finally {
+    state.confirming = false
   }
 }
 

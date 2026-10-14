@@ -1,13 +1,19 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+import { type CallToolResult, ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { loadConfig } from '../../src/config.js'
 import { makeCoreApi, type CoreApi } from '../../src/core/api.js'
 import { ImapSession } from '../../src/core/client.js'
 import { ToolError } from '../../src/errors.js'
 import { buildServer } from '../../src/mcp/server.js'
-import { FENCE_CLOSE, FENCE_OPEN, fenceMarkers } from '../../src/safety/render.js'
+import {
+  FENCE_CLOSE,
+  FENCE_OPEN,
+  fenceMarkers,
+  renderConfirmation,
+  type SendProposal,
+} from '../../src/safety/render.js'
 import { nonceOf, renderableEmail } from '../unit/helpers.js'
 import { makeUntrusted } from '../../src/safety/untrusted.js'
 
@@ -112,13 +118,13 @@ const openClients: Client[] = []
 async function startServer(
   env: Record<string, string | undefined> = {},
   overrides: Partial<CoreApi> = {},
+  client = new Client({ name: 'test-client', version: '0.0.0' }),
 ): Promise<{ client: Client; calls: Calls }> {
   const calls: Calls = {}
   const cfg = loadConfig({ ...BASE_ENV, ...env })
   const server = buildServer(cfg, { ...fakeCore(calls), ...overrides })
 
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
-  const client = new Client({ name: 'test-client', version: '0.0.0' })
   openClients.push(client)
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)])
 
@@ -465,6 +471,93 @@ it('send_email says up front that the message leaves the mailbox', async () => {
   const { client } = await startServer(SEND_ENV)
   const tool = (await client.listTools()).tools.find((t) => t.name === 'send_email')
   expect(tool?.description).toMatch(/external/i)
+})
+
+const PROPOSAL: SendProposal = {
+  from: 'tester@example.com',
+  to: ['a@x.example'],
+  cc: [],
+  subject: 's',
+  body: 'b',
+  attachments: [],
+}
+
+it.each([
+  ['accept', true],
+  ['decline', false],
+  ['cancel', false],
+] as const)("send_email shows core's proposal in a dialog, and %s reaches core as %s", async (action, expected) => {
+  const shown: string[] = []
+  const client = new Client({ name: 'test-client', version: '0.0.0' }, { capabilities: { elicitation: {} } })
+  client.setRequestHandler(ElicitRequestSchema, async (request) => {
+    shown.push(request.params.message)
+    return { action }
+  })
+  let answered: boolean | undefined
+  const { client: connected } = await startServer(
+    { ...SEND_ENV, SEND_CONFIRM: 'true' },
+    {
+      async sendEmail(_args, confirm) {
+        answered = await confirm?.(PROPOSAL)
+        return { accepted: ['a@x.example'], rejected: [], sent: 1, copy: { status: 'off' } }
+      },
+    },
+    client,
+  )
+  await call(connected, 'send_email', { to: ['a@x.example'], subject: 's', body: 'b' })
+
+  expect(shown).toEqual([renderConfirmation(PROPOSAL)])
+  expect(answered).toBe(expected)
+  const tool = (await connected.listTools()).tools.find((t) => t.name === 'send_email')
+  expect(tool?.description).toMatch(/confirmation dialog and it is sent only if they accept/)
+})
+
+it('the dialog waits ten minutes for an answer, not the SDK default of one', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  try {
+    const client = new Client({ name: 'test-client', version: '0.0.0' }, { capabilities: { elicitation: {} } })
+    client.setRequestHandler(ElicitRequestSchema, () => new Promise(() => {}))
+    let outcome = 'pending'
+    const { client: connected } = await startServer(
+      { ...SEND_ENV, SEND_CONFIRM: 'true' },
+      {
+        async sendEmail(_args, confirm) {
+          outcome = String(
+            await confirm?.(PROPOSAL).then(
+              (accepted) => `answered ${accepted}`,
+              () => 'gave up',
+            ),
+          )
+          return { accepted: [], rejected: [], sent: 0, copy: { status: 'off' } }
+        },
+      },
+      client,
+    )
+    const sending = connected.callTool(
+      { name: 'send_email', arguments: { to: ['a@x.example'], subject: 's', body: 'b' } },
+      undefined,
+      { timeout: 60 * 60_000 },
+    )
+    await vi.advanceTimersByTimeAsync(9 * 60_000)
+    expect(outcome).toBe('pending')
+    await vi.advanceTimersByTimeAsync(2 * 60_000)
+    await sending
+    expect(outcome).toBe('gave up')
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('a client that cannot show a dialog hands core no way to confirm', async () => {
+  let confirmGiven: unknown = 'unset'
+  const { client } = await startServer(SEND_ENV, {
+    async sendEmail(_args, confirm) {
+      confirmGiven = confirm
+      return { accepted: ['a@x.example'], rejected: [], sent: 1, copy: { status: 'off' } }
+    },
+  })
+  await call(client, 'send_email', { to: ['a@x.example'], subject: 's', body: 'b' })
+  expect(confirmGiven).toBeUndefined()
 })
 
 it.each([

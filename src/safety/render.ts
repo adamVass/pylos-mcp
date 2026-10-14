@@ -26,6 +26,7 @@ import {
   inspectHtml,
 } from './detect.js'
 import { htmlToPlainText, stripInvisible } from './html.js'
+import { INVISIBLE_CLASS } from './invisible.js'
 
 export const FENCE_OPEN = '<<<UNTRUSTED EMAIL CONTENT '
 export const FENCE_CLOSE = '<<<END UNTRUSTED EMAIL CONTENT '
@@ -410,4 +411,62 @@ export function renderSieveScript(
 export function renderSieveList(scripts: { name: UntrustedText; active: boolean }[]): string {
   const lines = scripts.map((s) => `${presentLine(s.name)}${s.active ? ' (active)' : ''}`)
   return ['Sieve scripts:', ...fence(lines)].join('\n')
+}
+
+export interface ProposedAttachment {
+  filename: string
+  declaredBytes?: number
+  encoding?: string
+  folder: string
+  uid: number
+}
+
+/** everything the account owner is shown before a send under SEND_CONFIRM */
+export interface SendProposal {
+  from: string
+  to: string[]
+  cc: string[]
+  subject: string
+  body: string
+  attachments: ProposedAttachment[]
+  inReplyTo?: MessageRef
+}
+
+// Shown to the account owner, not the model, so invisible and direction-changing
+// characters are spelled out rather than stripped: they are still in what gets sent.
+const SPELLED_OUT = new RegExp(`[${INVISIBLE_CLASS}\\p{Cc}\\p{Cf}\\u2028\\u2029]`, 'gu')
+
+function visible(s: string, keepLineBreaks = false): string {
+  return s.replace(SPELLED_OUT, (c) =>
+    keepLineBreaks && (c === '\n' || c === '\t')
+      ? c
+      : `[U+${c.codePointAt(0)?.toString(16).toUpperCase().padStart(4, '0')}]`,
+  )
+}
+
+/**
+ * Every line the server writes comes before the body, so nothing in the body can
+ * pose as a closing note from the server.
+ */
+export function renderConfirmation(p: SendProposal): string {
+  const lookalikes = [...p.to, ...p.cc].filter((a) => /(^|\.)xn--/i.test(a.split('@')[1] ?? ''))
+  const lines = [
+    'Send this email? It goes out only if you accept, and cannot be recalled.',
+    'The assistant wrote the recipients, subject and message below. Read all of it before accepting.',
+    '',
+    `From: ${p.from}`,
+    `To: ${p.to.map((a) => visible(a)).join(', ')}`,
+    ...(p.cc.length > 0 ? [`Cc: ${p.cc.map((a) => visible(a)).join(', ')}`] : []),
+    `Subject: ${visible(p.subject)}`,
+    ...p.attachments.map(
+      (a) =>
+        `Attachment: ${visible(a.filename)}, ${a.declaredBytes === undefined ? 'unknown size' : listedSize({ sizeBytes: a.declaredBytes, encoding: a.encoding })}, from ${line(a.folder)} uid ${a.uid}`,
+    ),
+    ...(p.inReplyTo ? [`In reply to: ${line(p.inReplyTo.folder)} uid ${p.inReplyTo.uid}`] : []),
+    ...lookalikes.map((a) => `Note: ${visible(a)} has an internationalized domain, which can imitate a familiar one.`),
+    '',
+    '----- message -----',
+    visible(p.body, true),
+  ]
+  return lines.join('\n')
 }

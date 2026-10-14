@@ -12,7 +12,7 @@ import { getAttachment, getEmail, type AttachmentResult } from './message.js'
 import { searchEmails, type SearchArgs } from './search.js'
 import { getThread, type Thread } from './thread.js'
 import { getSieveScript, listSieveScripts, type SieveScript, type SieveScriptEntry } from './sieve.js'
-import { SendState, sendEmail, type SendArgs, type SendResult } from './smtp.js'
+import { SendState, sendEmail, type Confirm, type SendArgs, type SendResult } from './smtp.js'
 
 export interface CoreApi {
   searchEmails(args: SearchArgs): Promise<{ total: number; items: RenderableSummary[] }>
@@ -24,7 +24,7 @@ export interface CoreApi {
   moveEmail(folder: string, uid: number, destination: string): Promise<void>
   setFlags(folder: string, uid: number, flags: { seen?: boolean; flagged?: boolean }): Promise<void>
   deleteEmail(folder: string, uid: number): Promise<DeleteResult>
-  sendEmail(args: SendArgs): Promise<SendResult>
+  sendEmail(args: SendArgs, confirm?: Confirm): Promise<SendResult>
   listSieveScripts(): Promise<SieveScriptEntry[]>
   getSieveScript(name: string): Promise<SieveScript>
 }
@@ -57,7 +57,7 @@ export function makeCoreApi(cfg: Config, session: ImapSession): CoreApi {
       : notEnabled,
     deleteEmail: cfg.capabilities.has('delete') ? (folder, uid) => deleteEmail(session, folder, uid) : notEnabled,
     sendEmail: cfg.capabilities.has('send')
-      ? (args) => sendEmail(session, cfg, sendState, args, composeBudget)
+      ? (args, confirm) => sendEmail(session, cfg, sendState, args, composeBudget, confirm)
       : notEnabled,
     listSieveScripts: cfg.capabilities.has('sieve-read') ? () => listSieveScripts(cfg) : notEnabled,
     getSieveScript: cfg.capabilities.has('sieve-read') ? (name) => getSieveScript(cfg, name) : notEnabled,
