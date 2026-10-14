@@ -1,6 +1,6 @@
 {
   "name": "pylos-mcp",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "mcpName": "io.github.adamVass/pylos-mcp",
   "description": "Email MCP server for Gmail, Outlook and any IMAP mailbox, hardened against prompt injection",
   "keywords": [

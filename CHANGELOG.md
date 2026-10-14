@@ -4,9 +4,11 @@ Notable changes to pylos-mcp. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-14
+
 ### Added
 
-- `SEND_CONFIRM=true` shows every message `send_email` would send in a confirmation dialog first, with its recipients, subject, attachments and whole body, and sends it only if you accept. It uses MCP elicitation, so clients that cannot show the dialog are refused and drafts remain the way to go there. Off by default.
+- `SEND_CONFIRM=true` shows every message `send_email` would send in a confirmation dialog first, with its recipients, subject, attachments and whole body, and sends it only if you accept. It uses MCP elicitation, so clients that cannot show the dialog are refused and drafts remain the way to go there. Claude Desktop does not show these dialogs yet. Off by default.
 
 ## [1.0.1] - 2026-10-12
 
@@ -171,6 +173,7 @@ A configuration that loaded on 0.2.0 can now fail at startup, if `SEND_ALLOWLIST
 - Warnings for hidden text, instruction-like phrases and long encoded runs.
 - Provider presets for Gmail, iCloud, Yahoo, GMX, Fastmail, mailbox.org and Posteo.
 
+[1.1.0]: https://github.com/adamVass/pylos-mcp/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/adamVass/pylos-mcp/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/adamVass/pylos-mcp/compare/v0.6.0...v1.0.0
 [0.6.0]: https://github.com/adamVass/pylos-mcp/compare/v0.5.0...v0.6.0
