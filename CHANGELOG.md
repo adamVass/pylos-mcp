@@ -4,6 +4,8 @@ Notable changes to pylos-mcp. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-15
+
 ### Added
 
 - `quote_original` on `create_draft` and `send_email` adds the original message below a reply, the way mail clients quote it. The server reads the original itself and leaves out text its HTML hid. It refuses when a recipient was not on the original, or when the original is too long to quote whole. Off by default. With `SEND_CONFIRM=true`, the dialog shows the quote and which message it came from.
@@ -181,6 +183,7 @@ A configuration that loaded on 0.2.0 can now fail at startup, if `SEND_ALLOWLIST
 - Warnings for hidden text, instruction-like phrases and long encoded runs.
 - Provider presets for Gmail, iCloud, Yahoo, GMX, Fastmail, mailbox.org and Posteo.
 
+[1.2.0]: https://github.com/adamVass/pylos-mcp/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/adamVass/pylos-mcp/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/adamVass/pylos-mcp/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/adamVass/pylos-mcp/compare/v0.6.0...v1.0.0
