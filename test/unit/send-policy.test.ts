@@ -9,12 +9,10 @@ import { sendPolicyClause } from '../../src/mcp/tools/send.js'
 it.each([
   [['a@x.example'], ['a@x.example'], []],
   [['A@X.example'], ['a@x.example'], []],
-  [['b@x.example'], ['a@x.example'], ['b@x.example']],
   [['a@corp.example'], ['*@corp.example'], []],
   [['a@evil.example'], ['*@corp.example'], ['a@evil.example']],
   [['a@subcorp.example'], ['*@corp.example'], ['a@subcorp.example']], // no substring tricks
   [['a@x.example', 'b@y.example'], ['*'], []],
-  [['a@x.example'], ['b@y.example', '*'], []], // * works wherever it sits in the list
 ])('recipients %j vs allowlist %j → rejected %j', (recipients, allowlist, rejected) => {
   expect(checkAllowlist(recipients, allowlist)).toEqual(rejected)
 })

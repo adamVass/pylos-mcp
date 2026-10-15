@@ -77,16 +77,6 @@ describe('ImapSession against a local Dovecot container', () => {
     }
   })
 
-  itIntegration('connects over TLS and lists folders', async () => {
-    const s = new ImapSession(testConfig())
-    try {
-      const folders = await s.withClient(async (c) => c.list())
-      expect(folders.map((f) => f.path)).toContain('INBOX')
-    } finally {
-      await s.close()
-    }
-  })
-
   itIntegration('connects with STARTTLS on the plaintext port, verifying the certificate', async () => {
     const s = new ImapSession(
       testConfig({ IMAP_STARTTLS: 'true', IMAP_PORT: process.env.PYLOS_IMAP_STARTTLS_PORT ?? '10143' }),
@@ -140,21 +130,6 @@ describe('ImapSession against a local Dovecot container', () => {
       await s.specialUse('\\Trash', 'Trash')
       expect(list).toHaveBeenCalledTimes(3)
     } finally {
-      await s.close()
-    }
-  })
-
-  itIntegration('a lost connection drops the remembered folders before the next lookup', async () => {
-    const s = new ImapSession(testConfig())
-    const list = vi.spyOn(ImapFlow.prototype, 'list')
-    try {
-      await s.specialUse('\\Drafts', 'Drafts')
-      ;(await s.withClient(async (c) => c)).close()
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      await s.specialUse('\\Drafts', 'Drafts')
-      expect(list).toHaveBeenCalledTimes(2)
-    } finally {
-      list.mockRestore()
       await s.close()
     }
   })
@@ -227,27 +202,23 @@ describe('ImapSession against a local Dovecot container', () => {
     await s.close()
   })
 
-  itIntegration('reuses one connection across calls', async () => {
+  itIntegration('reuses one connection, then reconnects and forgets remembered folders once it is lost', async () => {
     const s = new ImapSession(testConfig())
+    const list = vi.spyOn(ImapFlow.prototype, 'list')
     try {
       const a = await s.withClient(async (c) => c)
-      const b = await s.withClient(async (c) => c)
-      expect(a).toBe(b)
-    } finally {
-      await s.close()
-    }
-  })
+      expect(await s.withClient(async (c) => c)).toBe(a)
 
-  itIntegration('reconnects after the connection is lost', async () => {
-    const s = new ImapSession(testConfig())
-    try {
-      const a = await s.withClient(async (c) => c)
+      await s.specialUse('\\Drafts', 'Drafts')
       a.close()
       await new Promise((resolve) => setTimeout(resolve, 100))
       const b = await s.withClient(async (c) => c)
       expect(b).not.toBe(a)
+      await s.specialUse('\\Drafts', 'Drafts')
+      expect(list).toHaveBeenCalledTimes(2)
       expect((await s.withClient(async (c) => c.list())).map((f) => f.path)).toContain('INBOX')
     } finally {
+      list.mockRestore()
       await s.close()
     }
   })

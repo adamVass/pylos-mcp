@@ -179,32 +179,23 @@ describe('sendEmail against an in-process SMTP server', () => {
     const result = await send(
       {
         to: [ALLOWED],
+        cc: ['c@x.example'],
         subject: 'Quarterly report',
         body: 'the body text',
       },
       { state },
     )
 
-    expect(result.accepted).toEqual([ALLOWED])
+    expect(result.accepted).toEqual([ALLOWED, 'c@x.example'])
     expect(state.sent).toBe(1)
 
     expect(deliveries).toHaveLength(1)
-    expect(deliveries[0].raw).toContain('Quarterly report')
-    expect(deliveries[0].raw).toContain('the body text')
-    expect(deliveries[0].rcptTo).toEqual([ALLOWED])
-    expect(/^Bcc:/im.test(deliveries[0].raw)).toBe(false)
-  })
-
-  itIntegration('carries cc recipients in the envelope and the headers', async () => {
-    await send({
-      to: [ALLOWED],
-      cc: ['c@x.example'],
-      subject: 'with a copy',
-      body: 'b',
-    })
-
+    const parsed = await simpleParser(deliveries[0].raw)
+    expect(parsed.subject).toBe('Quarterly report')
+    expect(parsed.text?.trim()).toBe('the body text')
+    expect(parsed.cc).toMatchObject({ value: [{ address: 'c@x.example' }] })
     expect(deliveries[0].rcptTo).toEqual([ALLOWED, 'c@x.example'])
-    expect(deliveries[0].raw).toMatch(/^Cc: c@x\.example/im)
+    expect(/^Bcc:/im.test(deliveries[0].raw)).toBe(false)
   })
 
   itIntegration('a header injected through the subject cannot add a blind-copy recipient', async () => {
@@ -221,39 +212,36 @@ describe('sendEmail against an in-process SMTP server', () => {
     expect(deliveries[0].rcptTo).toEqual([ALLOWED])
   })
 
-  itIntegration('a recipient outside SEND_ALLOWLIST is refused before anything reaches the server', async () => {
-    const cfg = sendConfig({ SEND_ALLOWLIST: ALLOWED })
-    const state = new SendState()
+  itIntegration(
+    'a recipient outside SEND_ALLOWLIST, in to or cc, is refused before anything reaches the server',
+    async () => {
+      const cfg = sendConfig({ SEND_ALLOWLIST: ALLOWED })
+      const state = new SendState()
 
-    const error = await send(
-      {
-        to: [ALLOWED, OUTSIDE],
-        subject: 's',
-        body: 'b',
-      },
-      { cfg, state },
-    ).catch((e: unknown) => e)
+      const error = await send(
+        {
+          to: [ALLOWED, OUTSIDE],
+          subject: 's',
+          body: 'b',
+        },
+        { cfg, state },
+      ).catch((e: unknown) => e)
 
-    expect(error).toBeInstanceOf(ToolError)
-    expect((error as ToolError).code).toBe('policy')
-    expect((error as ToolError).message).toContain(OUTSIDE)
-    expect((error as ToolError).message).toContain('SEND_ALLOWLIST')
+      expect(error).toBeInstanceOf(ToolError)
+      expect((error as ToolError).code).toBe('policy')
+      expect((error as ToolError).message).toContain(OUTSIDE)
+      expect((error as ToolError).message).toContain('SEND_ALLOWLIST')
 
-    // a connection alone would already have leaked the recipient to the relay
-    expect(deliveries).toEqual([])
-    expect(connections).toBe(0)
-    expect(state.sent).toBe(0)
-  })
+      await expect(send({ to: [ALLOWED], cc: [OUTSIDE], subject: 's', body: 'b' }, { cfg })).rejects.toMatchObject({
+        code: 'policy',
+      })
 
-  itIntegration('the allowlist covers cc, not only to', async () => {
-    const cfg = sendConfig({ SEND_ALLOWLIST: ALLOWED })
-
-    await expect(send({ to: [ALLOWED], cc: [OUTSIDE], subject: 's', body: 'b' }, { cfg })).rejects.toMatchObject({
-      code: 'policy',
-    })
-
-    expect(deliveries).toEqual([])
-  })
+      // a connection alone would already have leaked the recipient to the relay
+      expect(deliveries).toEqual([])
+      expect(connections).toBe(0)
+      expect(state.sent).toBe(0)
+    },
+  )
 
   itIntegration('SEND_SESSION_CAP=2 lets two sends through and refuses the third', async () => {
     const cfg = sendConfig({ SEND_SESSION_CAP: '2' })

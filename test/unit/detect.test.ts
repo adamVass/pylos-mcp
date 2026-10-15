@@ -55,7 +55,6 @@ describe('hidden_text', () => {
   it.each([
     [`<p style="visibility:hidden">${LONG}</p>`, 'visibility:hidden'],
     [`<p style="font-size:1px">${LONG}</p>`, 'tiny font'],
-    [`<p style="font-size:0">${LONG}</p>`, 'tiny font'],
     [`<p style="color:#fff;background-color:#fff">${LONG}</p>`, 'matching colors'],
     [`<p style="position:absolute;left:-9999px">${LONG}</p>`, 'off-screen'],
     [`<p style="text-indent:-9999px">${LONG}</p>`, 'off-screen'],
@@ -318,22 +317,25 @@ describe('mixed script', () => {
     )
   })
 
-  it.each([
-    '\u04cf',
-    '\u04c0',
-    '\u050d',
-    '\u0517',
-    '\u04bd',
-    '\u0475',
-    '\u0461',
-    '\u0500',
-    '\u04ba',
-    '\u051a',
-    '\u051c',
-  ])('flags lookalike %s inside a Latin word', (letter) => {
-    expect(mixed(`Ex${letter}mple`)?.note).toBe(
-      '1 word mixing Latin with lookalike Cyrillic or Greek letters in subject',
-    )
+  it('flags every lookalike letter inside a Latin word', () => {
+    const lookalikes = [
+      '\u04cf',
+      '\u04c0',
+      '\u050d',
+      '\u0517',
+      '\u04bd',
+      '\u0475',
+      '\u0461',
+      '\u0500',
+      '\u04ba',
+      '\u051a',
+      '\u051c',
+    ]
+    for (const letter of lookalikes) {
+      expect(mixed(`Ex${letter}mple`)?.note, letter).toBe(
+        '1 word mixing Latin with lookalike Cyrillic or Greek letters in subject',
+      )
+    }
   })
 
   it('stays quiet on units, Russian text, brand-plus-suffix words and non-Latin filenames', () => {

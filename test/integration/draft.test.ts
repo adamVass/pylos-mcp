@@ -142,41 +142,32 @@ describe('createDraft against a local Dovecot container', () => {
     return (await uidsIn(seeder!, DRAFTS)).length
   }
 
-  itIntegration('appends a draft with \\Draft flag to the Drafts special-use folder', async () => {
-    const result = await draft({
-      subject: 'Plan',
-      body: 'Draft body',
-      to: ['x@y.example'],
-    })
+  itIntegration(
+    'appends a draft with \\Draft flag to the Drafts special-use folder, echoing to then cc in order',
+    async () => {
+      const result = await draft({
+        subject: 'Plan',
+        body: 'Draft body',
+        to: ['x@y.example', 'b@y.example'],
+        cc: ['c@y.example'],
+      })
 
-    expect(result.folder).toBe(DRAFTS)
-    // Dovecot advertises UIDPLUS, so the honest answer here is a real UID, and
-    // the `uid: null` branch for servers that do not is unexercised
-    expect(typeof result.uid).toBe('number')
-    expect(result.recipients).toEqual(['x@y.example'])
+      expect(result.folder).toBe(DRAFTS)
+      // Dovecot advertises UIDPLUS, so the honest answer here is a real UID, and
+      // the `uid: null` branch for servers that do not is unexercised
+      expect(typeof result.uid).toBe('number')
+      expect(result.recipients).toEqual(['x@y.example', 'b@y.example', 'c@y.example'])
 
-    expect(await flagsOf(seeder!, DRAFTS, result.uid!)).toContain('\\Draft')
+      expect(await flagsOf(seeder!, DRAFTS, result.uid!)).toContain('\\Draft')
 
-    const parsed = await simpleParser(await sourceOf(seeder!, DRAFTS, result.uid!))
-    expect(parsed.subject).toBe('Plan')
-    expect(parsed.text).toContain('Draft body')
-    expect(addressText(parsed.to)).toContain('x@y.example')
-  })
-
-  itIntegration('echoes to and cc as one recipient list, in order', async () => {
-    const result = await draft({
-      subject: 'Plan',
-      body: 'b',
-      to: ['a@y.example', 'b@y.example'],
-      cc: ['c@y.example'],
-    })
-
-    expect(result.recipients).toEqual(['a@y.example', 'b@y.example', 'c@y.example'])
-
-    const parsed = await simpleParser(await sourceOf(seeder!, DRAFTS, result.uid!))
-    expect(addressText(parsed.to)).toContain('b@y.example')
-    expect(addressText(parsed.cc)).toContain('c@y.example')
-  })
+      const parsed = await simpleParser(await sourceOf(seeder!, DRAFTS, result.uid!))
+      expect(parsed.subject).toBe('Plan')
+      expect(parsed.text).toContain('Draft body')
+      expect(addressText(parsed.to)).toContain('x@y.example')
+      expect(addressText(parsed.to)).toContain('b@y.example')
+      expect(addressText(parsed.cc)).toContain('c@y.example')
+    },
+  )
 
   itIntegration('attachment-by-reference round-trips byte-identical', async () => {
     const pdfPartId = await partIdFor(session, FOLDER, uidMultipart, 'report.pdf')

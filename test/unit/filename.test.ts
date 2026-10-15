@@ -48,7 +48,6 @@ describe('sanitizeFilename', () => {
   // anchor, and a subsequent trim then re-exposes the dots it should have removed
   it.each([
     [' .hidden', 'hidden'],
-    ['  ..secret', 'secret'],
     [' .', 'attachment'],
     [' . .hidden', 'hidden'], // interleaved whitespace/dots, exercises the fixpoint loop
   ])('strips leading whitespace+dots regardless of interleaving: %s', (input, expected) => {

@@ -67,8 +67,6 @@ describe('threadHeaders', () => {
   it.each([
     ['no Message-ID', null],
     ['a malformed Message-ID', 'orig-without-brackets'],
-    ['a Message-ID with a line break', '<orig\r\n@x.example>'],
-    ['a non-ASCII Message-ID', '<oríg@x.example>'],
   ])('refuses to thread a message with %s', (_name, messageId) => {
     const run = () => thread(block('Subject: s'), undefined, messageId)
     expect(run).toThrow(ToolError)

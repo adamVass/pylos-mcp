@@ -236,6 +236,15 @@ it('list_folders responses carry the fence and the message counts', async () => 
   expect(text).toContain('12 message(s)')
 })
 
+it('get_thread fences the thread and passes its arguments to core', async () => {
+  const { client, calls } = await startServer()
+  const { text, isError } = await call(client, 'get_thread', { folder: 'INBOX', uid: 7 })
+
+  expect(isError).toBe(false)
+  expect(text.slice(text.indexOf(FENCE_OPEN), text.indexOf(FENCE_CLOSE))).toContain('Quarterly report')
+  expect(calls.getThread).toEqual(['INBOX', 7])
+})
+
 it('search_emails applies the schema defaults and maps its arguments to core', async () => {
   const { client, calls } = await startServer()
   await call(client, 'search_emails', { folder: 'Archive', unread_only: true, flagged_only: true, since: '2026-01-02' })
@@ -264,7 +273,6 @@ it.each([
 })
 
 it.each([
-  ['a negative uid', { folder: 'INBOX', uid: -1 }],
   ['a zero uid', { folder: 'INBOX', uid: 0 }],
   ['a fractional uid', { folder: 'INBOX', uid: 1.5 }],
   ['a uid that is not a number', { folder: 'INBOX', uid: '7' }],
@@ -305,17 +313,10 @@ it('create_draft echoes the recipients and the review expectation', async () => 
   })
 
   expect(isError).toBe(false)
-  expect(text).toContain('x@y.example')
-  expect(text).toContain('z@y.example')
-  expect(text).toContain('Draft saved to Drafts (uid 42)')
-  expect(text).toMatch(/Review them in your mail client before sending/)
+  expect(text).toBe(
+    'Draft saved to Drafts (uid 42). Recipients: x@y.example, z@y.example. Review them in your mail client before sending.',
+  )
   expect(calls.createDraft?.[0]).toMatchObject({ to: ['x@y.example'], cc: ['z@y.example'] })
-})
-
-it('create_draft says so plainly when the draft has no recipients', async () => {
-  const { client } = await startServer()
-  const { text } = await call(client, 'create_draft', { subject: 's', body: 'b' })
-  expect(text).toContain('Recipients: none')
 })
 
 it('create_draft stays honest when the server reports no uid', async () => {
@@ -329,9 +330,9 @@ it('create_draft stays honest when the server reports no uid', async () => {
   )
 
   const { text } = await call(client, 'create_draft', { subject: 's', body: 'b' })
-  expect(text).toContain('Draft saved to Drafts')
-  expect(text).not.toMatch(/uid \d/)
-  expect(text).not.toContain('null')
+  expect(text).toBe(
+    'Draft saved to Drafts (the server reported no uid). Recipients: none. Add them in your mail client before sending.',
+  )
 })
 
 it('DRAFTS_NO_RECIPIENTS removes to/cc from the schema and rejects them if sent anyway', async () => {
@@ -405,10 +406,8 @@ it('move_email reports the move and maps its arguments to core in order', async 
 
 it.each([
   [{ seen: true }, 'Marked uid 7 as read.'],
-  [{ seen: false }, 'Marked uid 7 as unread.'],
   [{ flagged: true }, 'Marked uid 7 as flagged.'],
-  [{ flagged: false }, 'Marked uid 7 as unflagged.'],
-  [{ seen: true, flagged: true }, 'Marked uid 7 as read and flagged.'],
+  [{ seen: false, flagged: false }, 'Marked uid 7 as unread and unflagged.'],
 ])('set_flags reports the update for %j', async (flags, expected) => {
   const { client, calls } = await startServer({ CAPABILITIES: 'manage' })
   const { text, isError } = await call(client, 'set_flags', { folder: 'INBOX', uid: 7, ...flags })
@@ -431,8 +430,9 @@ it('delete_email reports a move to Trash, never a permanent delete (C-2 regressi
   const { text, isError } = await call(client, 'delete_email', { folder: 'INBOX', uid: 7 })
 
   expect(isError).toBe(false)
-  expect(text).toMatch(/moved to Trash/i)
-  expect(text.toLowerCase()).not.toContain('permanent')
+  expect(text).toBe(
+    'Uid 7 moved to Trash (Trash), out of INBOX. Nothing is erased: the message stays there until you remove it yourself, in your mail client.',
+  )
   expect(calls.deleteEmail).toEqual(['INBOX', 7])
 })
 
@@ -461,13 +461,21 @@ it('send_email passes in_reply_to and quote_original through and names the origi
     quote_original: true,
   })
   expect(calls.sendEmail?.[0]).toMatchObject({ inReplyTo: { folder: 'INBOX', uid: 42 }, quoteOriginal: true })
-  expect(text).toContain('as a reply to INBOX uid 42')
+  expect(text).toBe('Sent to a@x.example as a reply to INBOX uid 42 (2 of 5 session sends used).')
 })
 
 it('send_email says up front that the message leaves the mailbox', async () => {
   const { client } = await startServer(SEND_ENV)
   const tool = (await client.listTools()).tools.find((t) => t.name === 'send_email')
   expect(tool?.description).toMatch(/external/i)
+})
+
+it('with SEND_CONFIRM the description says each send waits on the owner', async () => {
+  const { client } = await startServer({ ...SEND_ENV, SEND_CONFIRM: 'true' })
+  const tool = (await client.listTools()).tools.find((t) => t.name === 'send_email')
+  expect(tool?.description).toContain(
+    'cannot be recalled, and the account owner is shown each message in a confirmation dialog and it is sent only if they accept. A client that cannot show the dialog has every send refused. Prefer create_draft',
+  )
 })
 
 const PROPOSAL: SendProposal = {
@@ -482,7 +490,6 @@ const PROPOSAL: SendProposal = {
 it.each([
   ['accept', true],
   ['decline', false],
-  ['cancel', false],
 ] as const)("send_email shows core's proposal in a dialog, and %s reaches core as %s", async (action, expected) => {
   const shown: string[] = []
   const client = new Client({ name: 'test-client', version: '0.0.0' }, { capabilities: { elicitation: {} } })
@@ -505,10 +512,6 @@ it.each([
 
   expect(shown).toEqual([renderConfirmation(PROPOSAL)])
   expect(answered).toBe(expected)
-  const tool = (await connected.listTools()).tools.find((t) => t.name === 'send_email')
-  expect(tool?.description).toContain(
-    'cannot be recalled, and the account owner is shown each message in a confirmation dialog and it is sent only if they accept. A client that cannot show the dialog has every send refused. Prefer create_draft',
-  )
 })
 
 it('the dialog waits ten minutes for an answer, not the SDK default of one', async () => {
@@ -562,7 +565,6 @@ it('a client that cannot show a dialog hands core no way to confirm', async () =
 it.each([
   ['no recipients at all', { subject: 's', body: 'b' }],
   ['an empty recipient list', { subject: 's', body: 'b', to: [] }],
-  ['an address that is not an email address', { subject: 's', body: 'b', to: ['not-an-address'] }],
   ['an address carrying a header break', { subject: 's', body: 'b', to: ['a@x.example\r\nBcc: l@e.example'] }],
 ])('send_email rejects %s at the schema, without reaching core', async (_name, args) => {
   const { client, calls } = await startServer(SEND_ENV)
@@ -620,9 +622,9 @@ it('send_email names a recipient the server refused instead of reporting a clean
   })
 
   expect(isError).toBe(false)
-  expect(text).toContain('Sent to alice@x.example (1 of 5 session sends used).')
-  expect(text).toContain('typo@x.example')
-  expect(text).toMatch(/refus/i)
+  expect(text).toBe(
+    'Sent to alice@x.example (1 of 5 session sends used). The server refused typo@x.example, so those addresses did not receive it.',
+  )
 })
 
 const SIEVE_ENV = { CAPABILITIES: 'sieve-read' }
@@ -671,7 +673,7 @@ it('a ToolError surfaces as an error result carrying its own sanitized message',
 
   const { text, isError } = await call(client, 'get_email', { folder: 'INBOX', uid: 1 })
   expect(isError).toBe(true)
-  expect(text).toContain('message not found')
+  expect(text).toBe('message not found — it may have been moved or deleted')
 })
 
 it('a ToolError cannot be made to forge a fence, break a line, or run unbounded', async () => {

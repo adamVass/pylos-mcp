@@ -100,11 +100,16 @@ describe('mailbox-ops against a local Dovecot container', () => {
     await expect(moveEmail(session, FOLDER, 999_999, DEST)).rejects.toMatchObject({ code: 'not_found' })
   })
 
-  itIntegration('setFlags sets and clears \\Seen and \\Flagged', async () => {
+  itIntegration('setFlags sets and clears \\Seen and \\Flagged, touching only the flag it is given', async () => {
     const uid = await seedOne(uniqueSubject('flags'))
 
-    await setFlags(session, FOLDER, uid, { seen: true, flagged: true })
+    await setFlags(session, FOLDER, uid, { seen: true })
     let flags = await flagsOf(seeder, FOLDER, uid)
+    expect(flags.has('\\Seen')).toBe(true)
+    expect(flags.has('\\Flagged')).toBe(false)
+
+    await setFlags(session, FOLDER, uid, { flagged: true })
+    flags = await flagsOf(seeder, FOLDER, uid)
     expect(flags.has('\\Seen')).toBe(true)
     expect(flags.has('\\Flagged')).toBe(true)
 
@@ -116,18 +121,6 @@ describe('mailbox-ops against a local Dovecot container', () => {
 
   itIntegration('setFlags on a uid that does not exist throws not_found, not a false success', async () => {
     await expect(setFlags(session, FOLDER, 999_999, { seen: true })).rejects.toMatchObject({ code: 'not_found' })
-  })
-
-  itIntegration('setFlags touches only the flag it is given', async () => {
-    const uid = await seedOne(uniqueSubject('flags-partial'))
-
-    await setFlags(session, FOLDER, uid, { seen: true })
-    expect((await flagsOf(seeder, FOLDER, uid)).has('\\Seen')).toBe(true)
-    expect((await flagsOf(seeder, FOLDER, uid)).has('\\Flagged')).toBe(false)
-
-    await setFlags(session, FOLDER, uid, { flagged: true })
-    expect((await flagsOf(seeder, FOLDER, uid)).has('\\Seen')).toBe(true)
-    expect((await flagsOf(seeder, FOLDER, uid)).has('\\Flagged')).toBe(true)
   })
 
   itIntegration(

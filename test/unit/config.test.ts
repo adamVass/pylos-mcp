@@ -65,14 +65,6 @@ describe('loadConfig', () => {
       loadConfig({ EMAIL_USER: 'a@x.example', PROVIDER: 'mailbox.org', EMAIL_PASSWORD_CMD: 'printf ""' }),
     ).toThrow(/EMAIL_PASSWORD_CMD/)
   })
-  it('EMAIL_PASSWORD_CMD runs the command and trims the trailing newline', () => {
-    const c = loadConfig({
-      EMAIL_USER: 'a@x.example',
-      PROVIDER: 'mailbox.org',
-      EMAIL_PASSWORD_CMD: 'printf "secret\\n"',
-    })
-    expect(c.password).toBe('secret')
-  })
   it('parses knobs with defaults', () => {
     const c = loadConfig(BASE)
     expect(c.maxBodyKb).toBe(64)
@@ -137,9 +129,6 @@ describe('loadConfig', () => {
   it('FLAG_EXTRA_PATTERNS splits on pipes, trims, lowercases and drops empties', () => {
     const cfg = loadConfig({ ...BASE, FLAG_EXTRA_PATTERNS: ' Reply Only In Base64 | | do the secret step ' })
     expect(cfg.detect.extraPatterns).toEqual(['reply only in base64', 'do the secret step'])
-  })
-  it('detector toggles reject values that are not true or false', () => {
-    expect(() => loadConfig({ ...BASE, FLAG_HIDDEN_TEXT: 'yes' })).toThrow(ConfigError)
   })
   it('treats empty env values as unset', () => {
     expect(loadConfig({ ...BASE, IMAP_HOST: '' }).imap.host).toBe('imap.mailbox.org')

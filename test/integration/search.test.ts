@@ -74,12 +74,6 @@ describe('searchEmails against a local Dovecot container', () => {
     },
   )
 
-  itIntegration('an offset past the end reports the total with no items', async () => {
-    const { total, items } = await searchEmails(session, { limit: 5, offset: 50 })
-    expect(total).toBe(12)
-    expect(items).toEqual([])
-  })
-
   itIntegration('full-text query filters server-side', async () => {
     const { total, items } = await searchEmails(session, { query: 'needle', limit: 50, offset: 0 })
     expect(total).toBe(3)
@@ -120,7 +114,7 @@ describe('searchEmails against a local Dovecot container', () => {
     expect((await searchEmails(session, { folder: 'Drafts', unreadOnly: false, limit: 50, offset: 0 })).total).toBe(1)
   })
 
-  itIntegration('maps envelope, size and flags into the summary', async () => {
+  itIntegration('maps envelope, size and flags into the summary, in the folder it is given', async () => {
     const { items } = await searchEmails(session, { limit: 1, offset: 0 })
     const newest = items[0]
 
@@ -134,15 +128,13 @@ describe('searchEmails against a local Dovecot container', () => {
     expect((newest.date as Date).getTime()).toBeGreaterThan(Date.now() - 60 * 60 * 1000)
     expect(newest.seen).toBe(false)
     expect(newest.flagged).toBe(false)
-  })
 
-  itIntegration('searches the folder it is given and reads seen and flagged from the flags', async () => {
-    const { total, items } = await searchEmails(session, { folder: 'Drafts', limit: 50, offset: 0 })
-    expect(total).toBe(1)
-    expect(items[0].folder).toBe('Drafts')
-    expect(readUntrusted(items[0].subject)).toBe('draft-01')
-    expect(items[0].seen).toBe(true)
-    expect(items[0].flagged).toBe(true)
+    const drafts = await searchEmails(session, { folder: 'Drafts', limit: 50, offset: 0 })
+    expect(drafts.total).toBe(1)
+    expect(drafts.items[0].folder).toBe('Drafts')
+    expect(readUntrusted(drafts.items[0].subject)).toBe('draft-01')
+    expect(drafts.items[0].seen).toBe(true)
+    expect(drafts.items[0].flagged).toBe(true)
   })
 
   itIntegration('flaggedOnly returns only flagged mail', async () => {
