@@ -133,20 +133,12 @@ describe('a sieve server that stalls during the TLS upgrade', () => {
     await closeServer(server)
   })
 
-  // the socket timeout is 10 s and not injectable, so this costs real wall-clock time. No shorter
-  // test tells a call that never returns from a slow one
-  itIntegration(
-    'gives up on the timeout instead of hanging forever',
-    async () => {
-      const startedAt = Date.now()
-      const error = await listSieveScripts(sieveConfig({ SIEVE_PORT: String(port) })).catch((e: unknown) => e)
+  itIntegration('gives up on the timeout instead of hanging forever', async () => {
+    const error = await listSieveScripts(sieveConfig({ SIEVE_PORT: String(port) }), 300).catch((e: unknown) => e)
 
-      expect(error).toBeInstanceOf(ToolError)
-      expect((error as ToolError).code).toBe('connect')
-      expect(Date.now() - startedAt).toBeLessThan(20_000)
-    },
-    30_000,
-  )
+    expect(error).toBeInstanceOf(ToolError)
+    expect((error as ToolError).message).toMatch(/^timed out talking to the sieve server/)
+  })
 })
 
 describe('a sieve server that streams more than the client will read', () => {

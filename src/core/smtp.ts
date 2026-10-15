@@ -88,70 +88,84 @@ export async function sendEmail(
     confirmed = await confirmSend(session, cfg, state, args, confirm)
   }
 
-  // Reserved against the cap, not merely counted after the fact. The check and
-  // the reservation are one synchronous step with no await between them, which
-  // is what makes them atomic on a single-threaded runtime.
-  refuseAtCap(cfg, state)
-  let release = (): void => {}
-  state.inFlight += 1
+  const relayed = await relay(session, cfg, state, smtp, args, recipients, confirmed, budget)
 
   // held until the copy is filed, because the composed message still holds the encoded bytes
   try {
-    const reserved = await (async () => {
-      try {
-        // the allowlist and cap settled before any IMAP work, and no relay socket opens before this
-        const prepared = confirmed ?? (await prepareBody(session, cfg, args))
-        const composed = await composeFromArgs(session, cfg, args, prepared, budget)
-        release = composed.release
-        // transmitted and filed as the same bytes, so the Sent copy is exactly what recipients received, Message-ID included
-        const { message } = composed
-
-        // fetched before the relay call that sendFailure wraps, so a sign-in request reaches the caller as written
-        const auth = session.tokens
-          ? { type: 'OAuth2' as const, user: cfg.user, accessToken: await session.tokens.accessToken() }
-          : { user: cfg.user, pass: passwordOf(cfg) }
-
-        const info = await transport(cfg, smtp, auth)
-          .sendMail({
-            envelope: { from: cfg.user, to: recipients },
-            raw: message,
-            disableFileAccess: true,
-            disableUrlAccess: true,
-          })
-          .catch((err: unknown) => {
-            throw sendFailure(err, `${smtp.host}:${smtp.port}`, session.tokens !== undefined)
-          })
-
-        // Only once the server has taken the message: a send the relay refused must
-        // not cost a slot. The total is captured WITH the increment rather than read
-        // back later, or a concurrent send settling in between would make each call
-        // report the other's position in the budget.
-        const sent = (state.sent += 1)
-
-        return { info, message, sent }
-      } finally {
-        // Released whichever way the send went, and before the copy is filed rather
-        // than after: once the increment lands the cap is accounted on `sent`, so
-        // holding the slot through the IMAP append would count the same message
-        // twice and falsely refuse a concurrent send at the boundary.
-        state.inFlight -= 1
-      }
-    })()
-
     // after the relay accepted and before the copy is filed, and never a reason to report the send as failed
     const reply = args.inReplyTo && { ref: args.inReplyTo, answered: await markAnswered(session, args.inReplyTo) }
 
     return {
-      accepted: reserved.info.accepted.map(addressOf),
+      accepted: relayed.info.accepted.map(addressOf),
       // `rejected` only, never `rejectedErrors`: those carry the server's own
       // response text, which is what sendFailure exists to keep out.
-      rejected: reserved.info.rejected.map(addressOf),
-      sent: reserved.sent,
-      copy: await saveCopy(session, cfg, reserved.message),
+      rejected: relayed.info.rejected.map(addressOf),
+      sent: relayed.sent,
+      copy: await saveCopy(session, cfg, relayed.message),
       reply,
     }
   } finally {
+    relayed.release()
+  }
+}
+
+async function relay(
+  session: ImapSession,
+  cfg: Config,
+  state: SendState,
+  smtp: { host: string; port: number },
+  args: SendArgs,
+  recipients: string[],
+  confirmed: PreparedBody | undefined,
+  budget: ComposeBudget,
+) {
+  // Reserved against the cap, not merely counted after the fact. The check and
+  // the reservation are one synchronous step with no await between them, which
+  // is what makes them atomic on a single-threaded runtime.
+  refuseAtCap(cfg, state)
+  state.inFlight += 1
+  let release = (): void => {}
+
+  try {
+    // the allowlist and cap settled before any IMAP work, and no relay socket opens before this
+    const prepared = confirmed ?? (await prepareBody(session, cfg, args))
+    const composed = await composeFromArgs(session, cfg, args, prepared, budget)
+    release = composed.release
+    // transmitted and filed as the same bytes, so the Sent copy is exactly what recipients received, Message-ID included
+    const { message } = composed
+
+    // fetched before the relay call that sendFailure wraps, so a sign-in request reaches the caller as written
+    const auth = session.tokens
+      ? { type: 'OAuth2' as const, user: cfg.user, accessToken: await session.tokens.accessToken() }
+      : { user: cfg.user, pass: passwordOf(cfg) }
+
+    const info = await transport(cfg, smtp, auth)
+      .sendMail({
+        envelope: { from: cfg.user, to: recipients },
+        raw: message,
+        disableFileAccess: true,
+        disableUrlAccess: true,
+      })
+      .catch((err: unknown) => {
+        throw sendFailure(err, `${smtp.host}:${smtp.port}`, session.tokens !== undefined)
+      })
+
+    // Only once the server has taken the message: a send the relay refused must
+    // not cost a slot. The total is captured WITH the increment rather than read
+    // back later, or a concurrent send settling in between would make each call
+    // report the other's position in the budget.
+    const sent = (state.sent += 1)
+
+    return { info, message, sent, release }
+  } catch (err) {
     release()
+    throw err
+  } finally {
+    // Released whichever way the send went, and before the copy is filed rather
+    // than after: once the increment lands the cap is accounted on `sent`, so
+    // holding the slot through the IMAP append would count the same message
+    // twice and falsely refuse a concurrent send at the boundary.
+    state.inFlight -= 1
   }
 }
 

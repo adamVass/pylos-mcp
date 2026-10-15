@@ -19,7 +19,7 @@ import { secureOptions } from './tls.js'
 const TIMEOUT_MS = 10_000
 
 // Bounds on what a server can make this client hold or loop over. Dovecot caps a
-// ManageSieve line at 64 kB, and the others exist so a server that never sends
+// ManageSieve line at 64 KiB, and the others exist so a server that never sends
 // its final OK fails fast instead of spinning until the socket timeout.
 const MAX_LINE_BYTES = 64 * 1024
 const MAX_CAPABILITY_LINES = 64
@@ -28,6 +28,7 @@ const MAX_SCRIPTS = 1000
 interface Target {
   host: string
   port: number
+  timeoutMs: number
 }
 
 export interface SieveScriptEntry {
@@ -35,8 +36,8 @@ export interface SieveScriptEntry {
   active: boolean
 }
 
-export async function listSieveScripts(cfg: Config): Promise<SieveScriptEntry[]> {
-  const conn = await authenticated(cfg)
+export async function listSieveScripts(cfg: Config, timeoutMs = TIMEOUT_MS): Promise<SieveScriptEntry[]> {
+  const conn = await authenticated(cfg, timeoutMs)
   try {
     return await readScriptList(conn)
   } finally {
@@ -56,7 +57,7 @@ export async function getSieveScript(cfg: Config, name: string): Promise<SieveSc
     throw new ToolError('policy', 'a sieve script name cannot contain a line break')
   }
 
-  const conn = await authenticated(cfg)
+  const conn = await authenticated(cfg, TIMEOUT_MS)
   try {
     return await readScript(conn, name, cfg.maxBodyKb)
   } finally {
@@ -68,8 +69,8 @@ export async function getSieveScript(cfg: Config, name: string): Promise<SieveSc
  * The order is the whole security property: the STARTTLS check happens against
  * the plaintext greeting and returns before any command follows it.
  */
-async function authenticated(cfg: Config): Promise<SieveConnection> {
-  const target = sieveTarget(cfg)
+async function authenticated(cfg: Config, timeoutMs: number): Promise<SieveConnection> {
+  const target = { ...sieveTarget(cfg), timeoutMs }
   const conn = await SieveConnection.open(target)
 
   try {
@@ -77,7 +78,7 @@ async function authenticated(cfg: Config): Promise<SieveConnection> {
     if (!capabilities.has('STARTTLS')) {
       throw new ToolError(
         'connect',
-        `the sieve server at ${target.host}:${target.port} does not offer STARTTLS. Refusing to continue`,
+        `the sieve server at ${targetLabel(target)} does not offer STARTTLS. Refusing to continue`,
       )
     }
 
@@ -85,7 +86,7 @@ async function authenticated(cfg: Config): Promise<SieveConnection> {
     if (!isOk(await conn.readLine())) {
       throw new ToolError(
         'connect',
-        `the sieve server at ${target.host}:${target.port} refused to start TLS. Refusing to continue`,
+        `the sieve server at ${targetLabel(target)} refused to start TLS. Refusing to continue`,
       )
     }
 
@@ -101,7 +102,7 @@ async function authenticated(cfg: Config): Promise<SieveConnection> {
   }
 }
 
-function sieveTarget(cfg: Config): Target {
+function sieveTarget(cfg: Config): Omit<Target, 'timeoutMs'> {
   if (!cfg.sieve) throw new ToolError('server', 'Sieve is not configured. Set SIEVE_HOST or PROVIDER')
   return cfg.sieve
 }
@@ -206,27 +207,11 @@ class SieveConnection {
     this.attach(socket)
   }
 
-  static open(target: Target): Promise<SieveConnection> {
-    return new Promise((resolve, reject) => {
-      const socket = netConnect({ host: target.host, port: target.port })
-      socket.setTimeout(TIMEOUT_MS)
-
-      const onError = (): void => {
-        socket.destroy()
-        reject(unreachable(target))
-      }
-      const onTimeout = (): void => {
-        socket.destroy()
-        reject(timedOut(target))
-      }
-      socket.once('error', onError)
-      socket.once('timeout', onTimeout)
-      socket.once('connect', () => {
-        socket.removeListener('error', onError)
-        socket.removeListener('timeout', onTimeout)
-        resolve(new SieveConnection(socket, target))
-      })
-    })
+  static async open(target: Target): Promise<SieveConnection> {
+    const socket = netConnect({ host: target.host, port: target.port })
+    socket.setTimeout(target.timeoutMs)
+    await awaitReady(socket, 'connect', target, () => unreachable(target))
+    return new SieveConnection(socket, target)
   }
 
   write(command: string): void {
@@ -273,10 +258,7 @@ class SieveConnection {
       const line = await this.readLine()
       if (isOk(line)) return capabilities
       if (isFailure(line)) {
-        throw new ToolError(
-          'connect',
-          `the sieve server at ${this.target.host}:${this.target.port} refused the connection`,
-        )
+        throw new ToolError('connect', `the sieve server at ${targetLabel(this.target)} refused the connection`)
       }
 
       const quoted = parseQuoted(line)
@@ -309,7 +291,7 @@ class SieveConnection {
     if (this.buffer.length > 0) {
       throw new ToolError(
         'connect',
-        `the sieve server at ${this.target.host}:${this.target.port} sent data before TLS started. Refusing to continue`,
+        `the sieve server at ${targetLabel(this.target)} sent data before TLS started. Refusing to continue`,
       )
     }
 
@@ -321,33 +303,19 @@ class SieveConnection {
     // Armed BEFORE the handshake. The plaintext socket's timeout handler was just
     // detached, so between here and secureConnect a server that answers OK to
     // STARTTLS and then goes silent would be watched by nothing.
-    secure.setTimeout(TIMEOUT_MS)
+    secure.setTimeout(this.target.timeoutMs)
 
-    await new Promise<void>((resolve, reject) => {
-      const onError = (): void => {
-        secure.destroy()
-        reject(
-          new ToolError(
-            'connect',
-            `TLS could not be established with the sieve server at ${this.target.host}:${this.target.port}. ` +
-              `If this is a private server with its own CA, ${TLS_CA_ADVICE}`,
-          ),
-        )
-      }
-      const onTimeout = (): void => {
-        secure.destroy()
-        reject(timedOut(this.target))
-      }
-      secure.once('error', onError)
-      secure.once('timeout', onTimeout)
-      secure.once('secureConnect', () => {
-        // both come off here, or they would co-fire with the handlers attach()
-        // installs for the rest of the session
-        secure.removeListener('error', onError)
-        secure.removeListener('timeout', onTimeout)
-        resolve()
-      })
-    })
+    await awaitReady(
+      secure,
+      'secureConnect',
+      this.target,
+      () =>
+        new ToolError(
+          'connect',
+          `TLS could not be established with the sieve server at ${targetLabel(this.target)}. ` +
+            `If this is a private server with its own CA, ${TLS_CA_ADVICE}`,
+        ),
+    )
 
     this.socket = secure
     this.attach(secure)
@@ -373,7 +341,7 @@ class SieveConnection {
   unparseable(): ToolError {
     return new ToolError(
       'server',
-      `the sieve server at ${this.target.host}:${this.target.port} sent a reply this client could not parse`,
+      `the sieve server at ${targetLabel(this.target)} sent a reply this client could not parse`,
     )
   }
 
@@ -424,28 +392,58 @@ class SieveConnection {
   }
 }
 
+function targetLabel(target: Target): string {
+  return `${target.host}:${target.port}`
+}
+
+/** the listeners come off on success, or they would co-fire with the handlers attach() installs for the rest of the session */
+function awaitReady(
+  socket: Socket,
+  readyEvent: 'connect' | 'secureConnect',
+  target: Target,
+  connectError: () => ToolError,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onError = (): void => {
+      socket.destroy()
+      reject(connectError())
+    }
+    const onTimeout = (): void => {
+      socket.destroy()
+      reject(timedOut(target))
+    }
+    socket.once('error', onError)
+    socket.once('timeout', onTimeout)
+    socket.once(readyEvent, () => {
+      socket.removeListener('error', onError)
+      socket.removeListener('timeout', onTimeout)
+      resolve()
+    })
+  })
+}
+
 /** only for a connection that never came up, where the "check SIEVE_HOST" advice is true */
 function unreachable(target: Target): ToolError {
   return new ToolError(
     'connect',
-    `could not establish a sieve connection to ${target.host}:${target.port}. Check SIEVE_HOST and SIEVE_PORT`,
+    `could not establish a sieve connection to ${targetLabel(target)}. Check SIEVE_HOST and SIEVE_PORT`,
   )
 }
 
 function connectionFailed(target: Target): ToolError {
-  return new ToolError('connect', `the connection to the sieve server at ${target.host}:${target.port} failed`)
+  return new ToolError('connect', `the connection to the sieve server at ${targetLabel(target)} failed`)
 }
 
 function timedOut(target: Target): ToolError {
   return new ToolError(
     'connect',
-    `timed out talking to the sieve server at ${target.host}:${target.port}. Check the network and any firewall`,
+    `timed out talking to the sieve server at ${targetLabel(target)}. Check the network and any firewall`,
   )
 }
 
 function closedEarly(target: Target): ToolError {
   return new ToolError(
     'connect',
-    `the sieve server at ${target.host}:${target.port} closed the connection before the reply was complete`,
+    `the sieve server at ${targetLabel(target)} closed the connection before the reply was complete`,
   )
 }
