@@ -15,7 +15,7 @@
 // enough to bury the rest of the result, or forge a marker.
 import { randomBytes } from 'node:crypto'
 import { UntrustedText, readUntrusted } from './untrusted.js'
-import { truncateAtKb } from './limits.js'
+import { BYTES_PER_KB, BYTES_PER_MB, truncateAtKb } from './limits.js'
 import {
   type ContentFlag,
   type DetectOptions,
@@ -26,7 +26,6 @@ import {
   inspectHtml,
 } from './detect.js'
 import { htmlToPlainText, stripInvisible } from './html.js'
-import { INVISIBLE_CLASS } from './invisible.js'
 
 export const FENCE_OPEN = '<<<UNTRUSTED EMAIL CONTENT '
 export const FENCE_CLOSE = '<<<END UNTRUSTED EMAIL CONTENT '
@@ -112,7 +111,7 @@ function present(t: UntrustedText): string {
 // push a real result out of the model's view.
 const MAX_LINE_CHARS = 500
 
-function line(s: string): string {
+export function line(s: string): string {
   const collapsed = sanitize(s).replace(/[\r\n\u0085\u2028\u2029]+/g, ' ')
   if (collapsed.length <= MAX_LINE_CHARS) return collapsed
 
@@ -124,7 +123,7 @@ function line(s: string): string {
   return `${collapsed.slice(0, end)} [truncated]`
 }
 
-function presentLine(t: UntrustedText): string {
+export function presentLine(t: UntrustedText): string {
   return line(readUntrusted(t))
 }
 
@@ -139,11 +138,11 @@ export function boundErrorMessage(message: string): string {
 }
 
 export function formatMb(bytes: number): string {
-  return `${(bytes / 1_000_000).toFixed(1)} MB`
+  return `${(bytes / BYTES_PER_MB).toFixed(1)} MB`
 }
 
 // BODYSTRUCTURE declares the encoded size, and base64 is a third larger than the file
-function listedSize(a: { sizeBytes: number; encoding?: string }): string {
+export function listedSize(a: { sizeBytes: number; encoding?: string }): string {
   return a.encoding?.toLowerCase() === 'base64'
     ? `about ${formatSize(Math.floor((a.sizeBytes * 3) / 4))}`
     : formatSize(a.sizeBytes)
@@ -151,8 +150,8 @@ function listedSize(a: { sizeBytes: number; encoding?: string }): string {
 
 function formatSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return 'unknown size'
-  if (bytes < 1000) return `${bytes} B`
-  if (bytes < 1_000_000) return `${(bytes / 1000).toFixed(1)} kB`
+  if (bytes < BYTES_PER_KB) return `${bytes} B`
+  if (bytes < BYTES_PER_MB) return `${(bytes / BYTES_PER_KB).toFixed(1)} kB`
   return formatMb(bytes)
 }
 
@@ -318,7 +317,7 @@ export function renderAttachmentSaved(path: string, sizeBytes: number, contentTy
   return [`Saved an attachment (${formatSize(sizeBytes)}, ${type}) to:`, ...fence([line(path)])].join('\n')
 }
 
-type MessageRef = { folder: string; uid: number }
+export type MessageRef = { folder: string; uid: number }
 
 function replyClause(ref: MessageRef | undefined): string {
   return ref === undefined ? '' : ` as a reply to ${line(ref.folder)} uid ${ref.uid}`
@@ -411,90 +410,4 @@ export function renderSieveScript(
 export function renderSieveList(scripts: { name: UntrustedText; active: boolean }[]): string {
   const lines = scripts.map((s) => `${presentLine(s.name)}${s.active ? ' (active)' : ''}`)
   return ['Sieve scripts:', ...fence(lines)].join('\n')
-}
-
-export interface ProposedAttachment {
-  filename: string
-  declaredBytes?: number
-  encoding?: string
-  folder: string
-  uid: number
-}
-
-export interface QuoteSource {
-  from: UntrustedText
-  /** the Date header, which the sender wrote */
-  sent: Date | string | null
-  body: UntrustedText
-  bodyIsHtml: boolean
-}
-
-/** the attribution line and the `> ` quoted body, appended below a reply by core */
-export function renderQuote(q: QuoteSource, detect: DetectOptions): string {
-  const raw = readUntrusted(q.body)
-  // Hidden text is dropped for fidelity, since conversion would make it visible.
-  // No stripInvisible: people read this, and ZWNJ, ZWJ and variation selectors are real text.
-  const text = q.bodyIsHtml ? htmlToPlainText(inspectHtml(raw, { ...detect, stripHiddenText: true }).html) : raw
-  const lines = text
-    .replace(/\r\n?|[\u0085\u2028\u2029]/g, '\n')
-    .trimEnd()
-    .split('\n')
-    .map((l) => (l === '' ? '>' : `> ${l}`))
-  const sent = q.sent === null ? null : new Date(q.sent)
-  const date = sent && !Number.isNaN(sent.getTime()) ? sent.toUTCString() : 'an unknown date'
-  const from = presentLine(q.from) || 'the sender'
-  return [`On ${date}, ${from} wrote:`, ...lines].join('\n')
-}
-
-/** everything the account owner is shown before a send under SEND_CONFIRM */
-export interface SendProposal {
-  from: string
-  to: string[]
-  cc: string[]
-  subject: string
-  body: string
-  attachments: ProposedAttachment[]
-  inReplyTo?: MessageRef
-  quotedFrom?: MessageRef
-}
-
-// Shown to the account owner, not the model, so invisible and direction-changing
-// characters are spelled out rather than stripped: they are still in what gets sent.
-const SPELLED_OUT = new RegExp(`[${INVISIBLE_CLASS}\\p{Cc}\\p{Cf}\\u2028\\u2029]`, 'gu')
-
-function visible(s: string, keepLineBreaks = false): string {
-  return s.replace(SPELLED_OUT, (c) =>
-    keepLineBreaks && (c === '\n' || c === '\t')
-      ? c
-      : `[U+${c.codePointAt(0)?.toString(16).toUpperCase().padStart(4, '0')}]`,
-  )
-}
-
-/**
- * Every line the server writes comes before the body, so nothing in the body can
- * pose as a closing note from the server.
- */
-export function renderConfirmation(p: SendProposal): string {
-  const lookalikes = [...p.to, ...p.cc].filter((a) => /(^|\.)xn--/i.test(a.split('@')[1] ?? ''))
-  const lines = [
-    'Send this email? It goes out only if you accept, and cannot be recalled.',
-    p.quotedFrom
-      ? `The assistant wrote the recipients, subject and message below. The quoted original at the end was added by this server from ${line(p.quotedFrom.folder)} uid ${p.quotedFrom.uid}. Read all of it before accepting.`
-      : 'The assistant wrote the recipients, subject and message below. Read all of it before accepting.',
-    '',
-    `From: ${p.from}`,
-    `To: ${p.to.map((a) => visible(a)).join(', ')}`,
-    ...(p.cc.length > 0 ? [`Cc: ${p.cc.map((a) => visible(a)).join(', ')}`] : []),
-    `Subject: ${visible(p.subject)}`,
-    ...p.attachments.map(
-      (a) =>
-        `Attachment: ${visible(a.filename)}, ${a.declaredBytes === undefined ? 'unknown size' : listedSize({ sizeBytes: a.declaredBytes, encoding: a.encoding })}, from ${line(a.folder)} uid ${a.uid}`,
-    ),
-    ...(p.inReplyTo ? [`In reply to: ${line(p.inReplyTo.folder)} uid ${p.inReplyTo.uid}`] : []),
-    ...lookalikes.map((a) => `Note: ${visible(a)} has an internationalized domain, which can imitate a familiar one.`),
-    '',
-    '----- message -----',
-    visible(p.body, true),
-  ]
-  return lines.join('\n')
 }

@@ -15,7 +15,8 @@ import {
   FENCE_OPEN,
   FENCE_CLOSE,
 } from '../../src/safety/render.js'
-import { renderConfirmation, renderQuote, type SentCopy } from '../../src/safety/render.js'
+import { renderConfirmation, renderQuote } from '../../src/safety/outgoing.js'
+import type { SentCopy } from '../../src/safety/render.js'
 import { DEPTH_OMITTED } from '../../src/safety/html.js'
 import { nonceOf, renderableEmail } from './helpers.js'
 

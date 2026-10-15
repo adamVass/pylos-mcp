@@ -1,9 +1,10 @@
 // The only module in this server that transmits mail.
 
 import { createTransport } from 'nodemailer'
-import { passwordOf, type Config } from '../config.js'
+import { passwordOf, SMTP_IMPLICIT_TLS_PORT, type Config } from '../config.js'
 import { APP_PASSWORD_ADVICE, TLS_CA_ADVICE, ToolError, errorCode } from '../errors.js'
-import type { SendProposal, SentCopy } from '../safety/render.js'
+import type { SendProposal } from '../safety/outgoing.js'
+import type { SentCopy } from '../safety/render.js'
 import type { ImapSession } from './client.js'
 import { checkAllowlist } from './address.js'
 import {
@@ -11,7 +12,7 @@ import {
   describeAttachments,
   prepareBody,
   type ComposeBudget,
-  type PartRef,
+  type DraftArgs,
   type PreparedBody,
 } from './draft.js'
 import { markAnswered } from './mailbox-ops.js'
@@ -31,14 +32,8 @@ export class SendState {
   confirming = false
 }
 
-export interface SendArgs {
+export interface SendArgs extends DraftArgs {
   to: string[]
-  cc?: string[]
-  subject: string
-  body: string
-  attachments?: PartRef[]
-  inReplyTo?: ReplyRef
-  quoteOriginal?: boolean
 }
 
 /** resolves true only when the owner accepted, and never for a dialog that failed or timed out */
@@ -256,7 +251,7 @@ function transport(
     // implicit TLS on 465, STARTTLS otherwise, and requireTLS makes that second
     // case fail closed instead of falling back to a cleartext session against a
     // server that does not offer the upgrade
-    secure: smtp.port === 465,
+    secure: smtp.port === SMTP_IMPLICIT_TLS_PORT,
     requireTLS: true,
     auth,
     // stdout is reserved for the MCP protocol, so nodemailer must never write to it

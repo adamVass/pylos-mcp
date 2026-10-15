@@ -5,9 +5,10 @@ import { z } from 'zod'
 import type { Config } from '../../config.js'
 import type { CoreApi } from '../../core/api.js'
 import type { Confirm } from '../../core/smtp.js'
-import { renderConfirmation, renderSent } from '../../safety/render.js'
+import { renderConfirmation } from '../../safety/outgoing.js'
+import { renderSent } from '../../safety/render.js'
 import { run } from '../run.js'
-import { address, attachments, MAX_RECIPIENTS, quoteOriginal, REPLY_NOTE, replyRef, toPartRefs } from './bounds.js'
+import { address, composeFields, MAX_RECIPIENTS, REPLY_NOTE, toComposeArgs } from './bounds.js'
 
 export function sendPolicyClause(allowlist: string[] | undefined): string {
   if (allowlist === undefined) {
@@ -56,11 +57,7 @@ export function registerSendTools(server: McpServer, cfg: Config, core: CoreApi)
       inputSchema: {
         to: z.array(address()).min(1).max(MAX_RECIPIENTS).describe('Recipients. At least one is required.'),
         cc: z.array(address()).max(MAX_RECIPIENTS).optional(),
-        subject: z.string(),
-        body: z.string(),
-        attachments,
-        in_reply_to: replyRef.optional(),
-        quote_original: quoteOriginal,
+        ...composeFields,
       },
       // the only tool whose effect cannot be undone from a mail client, so it
       // carries both hints a client would use to insist on a human first
@@ -74,15 +71,7 @@ export function registerSendTools(server: McpServer, cfg: Config, core: CoreApi)
     (args, extra) =>
       run(async () => {
         const sent = await core.sendEmail(
-          {
-            to: args.to,
-            cc: args.cc,
-            subject: args.subject,
-            body: args.body,
-            attachments: toPartRefs(args.attachments),
-            inReplyTo: args.in_reply_to,
-            quoteOriginal: args.quote_original,
-          },
+          { ...toComposeArgs(args), to: args.to, cc: args.cc },
           ownerConfirmation(server, extra),
         )
         return renderSent(sent.accepted, sent.rejected, sent.sent, cfg.sendSessionCap, sent.copy, sent.reply)

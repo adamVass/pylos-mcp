@@ -1,7 +1,8 @@
 import type { Readable } from 'node:stream'
 import MailComposer from 'nodemailer/lib/mail-composer/index.js'
 import type { Config } from '../config.js'
-import { renderQuote, type ProposedAttachment } from '../safety/render.js'
+import { BYTES_PER_KB } from '../safety/limits.js'
+import { renderQuote, type ProposedAttachment } from '../safety/outgoing.js'
 import type { ImapSession } from './client.js'
 import { ToolError } from '../errors.js'
 import { readQuotedOriginal, readReplyHeaders, type ReplyHeaders, type ReplyRef } from './reply.js'
@@ -160,10 +161,10 @@ export async function prepareBody(session: ImapSession, cfg: Config, args: Draft
 
 function refuseLongBody(body: string): void {
   const bytes = Buffer.byteLength(body)
-  if (bytes <= MAX_OUTGOING_BODY_KB * 1000) return
+  if (bytes <= MAX_OUTGOING_BODY_KB * BYTES_PER_KB) return
   throw new ToolError(
     'cap_exceeded',
-    `the message body is ${Math.ceil(bytes / 1000)} kB, over the ${MAX_OUTGOING_BODY_KB} kB limit for an outgoing message. Nothing was saved or sent`,
+    `the message body is ${Math.ceil(bytes / BYTES_PER_KB)} kB, over the ${MAX_OUTGOING_BODY_KB} kB limit for an outgoing message. Nothing was saved or sent`,
   )
 }
 

@@ -8,7 +8,7 @@ import { formatAddress } from './address.js'
 import type { ImapSession } from './client.js'
 import { MESSAGE_GONE, ToolError } from '../errors.js'
 import { sanitizeFilename, uniquePath } from '../safety/filename.js'
-import { readLimitBytes } from '../safety/limits.js'
+import { BYTES_PER_MB, readLimitBytes } from '../safety/limits.js'
 import { formatMb, type RenderableEmail } from '../safety/render.js'
 import { makeUntrusted, type UntrustedText } from '../safety/untrusted.js'
 import {
@@ -162,7 +162,7 @@ export async function resolvePartForDownload(
 }
 
 export function capBytes(maxAttachmentMb: number): number {
-  return maxAttachmentMb * 1_000_000
+  return maxAttachmentMb * BYTES_PER_MB
 }
 
 export function capExceededMidTransfer(maxAttachmentMb: number): ToolError {

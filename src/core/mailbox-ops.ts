@@ -115,19 +115,15 @@ async function sameFolder(session: ImapSession, a: string, b: string): Promise<b
   })
 }
 
-function findTrash(session: ImapSession): Promise<string> {
-  return session.specialUse('\\Trash', 'Trash')
-}
-
 /** without `delete`, moving to Trash is a delete under another name */
 export async function refuseTrash(session: ImapSession, destination: string): Promise<void> {
-  if (await sameFolder(session, destination, await findTrash(session))) {
+  if (await sameFolder(session, destination, await session.specialUse('\\Trash', 'Trash'))) {
     throw new ToolError('policy', TRASH_NEEDS_DELETE)
   }
 }
 
 export async function deleteEmail(session: ImapSession, folder: string, uid: number): Promise<DeleteResult> {
-  const trashFolder = await findTrash(session)
+  const trashFolder = await session.specialUse('\\Trash', 'Trash')
   if (await sameFolder(session, folder, trashFolder)) throw new ToolError('policy', ALREADY_IN_TRASH)
   await moveEmail(session, folder, uid, trashFolder)
   return { trashFolder }

@@ -108,9 +108,13 @@ const PRESETS: ReadonlyMap<string, Preset> = new Map([
 ])
 
 /** pylos-mcp's own public client registration. Not a secret: a public client has none. */
+/** the default, and the port smtp.ts speaks TLS on from the first byte instead of upgrading */
+export const SMTP_IMPLICIT_TLS_PORT = 465
+
 export const MICROSOFT_CLIENT_ID = '45dd6df5-9736-4657-8111-fe9c810aba3b'
 const OUTLOOK_IMAP_SCOPE = 'https://outlook.office.com/IMAP.AccessAsUser.All'
 const OUTLOOK_SMTP_SCOPE = 'https://outlook.office.com/SMTP.Send'
+const MAX_TENANT_CHARS = 100
 
 const ALL_CAPABILITIES: readonly Capability[] = ['read', 'drafts', 'manage', 'send', 'delete', 'sieve-read']
 const CAPABILITY_SET: ReadonlySet<string> = new Set(ALL_CAPABILITIES)
@@ -249,7 +253,7 @@ function microsoftAuth(env: Record<string, string | undefined>, capabilities: Se
   }
   const tenant = env.MS_TENANT ?? 'common'
   // it becomes a path segment of the sign-in URL, so no slashes and no dot segments
-  if (tenant.length > 100 || !/^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*$/.test(tenant)) {
+  if (tenant.length > MAX_TENANT_CHARS || !/^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*$/.test(tenant)) {
     throw new ConfigError(`MS_TENANT must be a tenant ID or domain, got "${tenant}"`)
   }
   const clientId = env.MS_CLIENT_ID ?? MICROSOFT_CLIENT_ID
@@ -297,7 +301,7 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
         'SMTP host is not configured. Set SMTP_HOST or PROVIDER (required because the "send" capability is enabled)',
       )
     }
-    smtp = { host: smtpHost, port: numericEnv(env, 'SMTP_PORT', preset?.smtpPort ?? 465) }
+    smtp = { host: smtpHost, port: numericEnv(env, 'SMTP_PORT', preset?.smtpPort ?? SMTP_IMPLICIT_TLS_PORT) }
   }
 
   let sieve: { host: string; port: number } | undefined

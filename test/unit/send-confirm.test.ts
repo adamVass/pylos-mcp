@@ -1,50 +1,33 @@
-import { Readable } from 'node:stream'
 import { expect, it } from 'vitest'
-import { loadConfig } from '../../src/config.js'
 import { makeCoreApi } from '../../src/core/api.js'
 import { ComposeBudget } from '../../src/core/draft.js'
 import { type Confirm, SendState, sendEmail } from '../../src/core/smtp.js'
-import type { SendProposal } from '../../src/safety/render.js'
-import { fakeSession } from './helpers.js'
+import type { SendProposal } from '../../src/safety/outgoing.js'
+import { confirmSendConfig, fakeClient, fakeSession } from './helpers.js'
 
 const REF = { folder: 'INBOX', uid: 7, partId: '1' }
 const ARGS = { to: ['b@x.example'], subject: 's', body: 'b', attachments: [REF] }
 
-// nothing listens on port 1, so a send that gets past the dialog fails at connect
-const cfg = loadConfig({
-  EMAIL_USER: 'a@x.example',
-  EMAIL_PASSWORD: 'pw',
-  IMAP_HOST: 'localhost',
-  CAPABILITIES: 'send',
-  SMTP_HOST: '127.0.0.1',
-  SMTP_PORT: '1',
-  SEND_ALLOWLIST: '*@x.example',
-  SEND_SESSION_CAP: '2',
-  SEND_CONFIRM: 'true',
-})
+const cfg = confirmSendConfig({ SEND_SESSION_CAP: '2' })
 
 /** records the order of IMAP work against the dialog */
 function harness() {
   const events: string[] = []
-  const client = {
-    fetchOne: async () => {
-      events.push('fetch')
-      return {
-        uid: 7,
-        bodyStructure: {
-          part: '1',
-          type: 'application/pdf',
-          size: 1000,
-          disposition: 'attachment',
-          dispositionParameters: { filename: 'report.pdf' },
-        },
-      }
+  const client = fakeClient({
+    events,
+    body: [Buffer.alloc(1000)],
+    meta: { contentType: 'application/pdf' },
+    message: {
+      uid: 7,
+      bodyStructure: {
+        part: '1',
+        type: 'application/pdf',
+        size: 1000,
+        disposition: 'attachment',
+        dispositionParameters: { filename: 'report.pdf' },
+      },
     },
-    download: async () => {
-      events.push('download')
-      return { content: Readable.from([Buffer.alloc(1000)]), meta: { contentType: 'application/pdf' } }
-    },
-  }
+  })
   const state = new SendState()
   const send = (confirm?: Confirm, args = ARGS) =>
     sendEmail(fakeSession(client), cfg, state, args, new ComposeBudget(), confirm)

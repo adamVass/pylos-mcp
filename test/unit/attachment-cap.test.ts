@@ -11,7 +11,7 @@ import { ComposeBudget, collectAttachments, createDraft } from '../../src/core/d
 import { SendState, sendEmail } from '../../src/core/smtp.js'
 import { ToolError } from '../../src/errors.js'
 import { getAttachment } from '../../src/core/message.js'
-import { fakeSession } from './helpers.js'
+import { fakeClient, fakeSession } from './helpers.js'
 
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>()
@@ -27,17 +27,13 @@ vi.mock('node:child_process', async (importOriginal) => {
 function stubSession(
   node: Record<string, unknown>,
   body: Iterable<Buffer>,
-): { session: ImapSession; download: ReturnType<typeof vi.fn> } {
-  const download = vi.fn(async () => ({
-    content: Readable.from(body),
+): { session: ImapSession; download: ReturnType<typeof fakeClient>['download'] } {
+  const client = fakeClient({
+    message: { uid: 7, bodyStructure: node },
+    body,
     meta: { contentType: 'application/pdf' },
-  }))
-  const client = {
-    fetchOne: async () => ({ uid: 7, bodyStructure: node }),
-    download,
-  }
-
-  return { session: fakeSession(client), download }
+  })
+  return { session: fakeSession(client), download: client.download }
 }
 
 function config(downloadDir: string) {

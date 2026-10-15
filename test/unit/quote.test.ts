@@ -1,48 +1,31 @@
-import { Readable } from 'node:stream'
 import { expect, it } from 'vitest'
-import { loadConfig } from '../../src/config.js'
 import { ComposeBudget, prepareBody } from '../../src/core/draft.js'
 import { SendState, sendEmail } from '../../src/core/smtp.js'
-import type { SendProposal } from '../../src/safety/render.js'
-import { fakeSession } from './helpers.js'
+import type { SendProposal } from '../../src/safety/outgoing.js'
+import { confirmSendConfig, fakeClient, fakeSession } from './helpers.js'
 
 const REF = { folder: 'INBOX', uid: 7 }
 const QUOTED = 'Thanks\n\nOn Wed, 14 Oct 2026 09:12:00 GMT, Ann <ann@x.example> wrote:\n> hello'
 
-// nothing listens on port 1, so a send that gets past the dialog fails at connect
-const cfg = loadConfig({
-  EMAIL_USER: 'me@x.example',
-  EMAIL_PASSWORD: 'pw',
-  IMAP_HOST: 'localhost',
-  CAPABILITIES: 'drafts,send',
-  SMTP_HOST: '127.0.0.1',
-  SMTP_PORT: '1',
-  SEND_ALLOWLIST: '*@x.example',
-  SEND_CONFIRM: 'true',
-})
+const cfg = confirmSendConfig({ EMAIL_USER: 'me@x.example', CAPABILITIES: 'drafts,send' })
 
 function original(body = 'hello\r\n') {
   const events: string[] = []
-  const client = {
-    fetchOne: async () => {
-      events.push('fetch')
-      return {
-        uid: 7,
-        headers: Buffer.from('Message-ID: <orig@x.example>\r\n\r\n'),
-        envelope: {
-          date: new Date('2026-10-14T09:12:00Z'),
-          from: [{ name: 'Ann', address: 'ann@x.example' }],
-          to: [{ address: 'bob@x.example' }],
-          replyTo: [{ address: 'list@x.example' }],
-        },
-        bodyStructure: { part: '1', type: 'text/plain', size: Buffer.byteLength(body) },
-      }
+  const client = fakeClient({
+    events,
+    body: [Buffer.from(body)],
+    message: {
+      uid: 7,
+      headers: Buffer.from('Message-ID: <orig@x.example>\r\n\r\n'),
+      envelope: {
+        date: new Date('2026-10-14T09:12:00Z'),
+        from: [{ name: 'Ann', address: 'ann@x.example' }],
+        to: [{ address: 'bob@x.example' }],
+        replyTo: [{ address: 'list@x.example' }],
+      },
+      bodyStructure: { part: '1', type: 'text/plain', size: Buffer.byteLength(body) },
     },
-    download: async () => {
-      events.push('download')
-      return { content: Readable.from([Buffer.from(body)]), meta: {} }
-    },
-  }
+  })
   return { events, session: fakeSession(client) }
 }
 

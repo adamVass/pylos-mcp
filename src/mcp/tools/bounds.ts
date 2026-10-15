@@ -3,7 +3,7 @@
 // create_draft does not have is a cap with a way around it.
 
 import { z } from 'zod'
-import type { PartRef } from '../../core/draft.js'
+import type { DraftArgs, PartRef } from '../../core/draft.js'
 
 /** every attachment is fetched into memory to be composed, so the count is bounded */
 const MAX_ATTACHMENTS = 10
@@ -36,13 +36,13 @@ export const uid = z.number().int().positive()
 // references then sees `cc` with no `format: "email"` on it at all.
 export const address = (): z.ZodString => z.string().email()
 
-export const attachment = z.object({
+const attachment = z.object({
   folder,
   uid,
   part_id: z.string().min(1),
 })
 
-export const attachments = z
+const attachments = z
   .array(attachment)
   .max(MAX_ATTACHMENTS)
   .optional()
@@ -50,24 +50,38 @@ export const attachments = z
 
 // `.describe` returns fresh instances, so the SDK's identity dedup cannot turn
 // these into a $ref into `attachment` within the same tool schema
-export const replyRef = z.object({
+const replyRef = z.object({
   folder: folder.describe('Folder of the message being answered.'),
   uid: uid.describe('Uid of the message being answered.'),
 })
-
-export const quoteOriginal = z
-  .boolean()
-  .optional()
-  .describe('Add the original below the body as a quote. Needs in_reply_to.')
 
 export const REPLY_NOTE =
   'To reply, pass in_reply_to with the original\'s folder and uid. A subject starting with "Re:" does not thread on its own. ' +
   'Set quote_original to add the original below the reply as a quote, allowed only when every recipient was on the original.'
 
+/** what both create_draft and send_email take besides recipients, kept as one shape so neither can drift */
+export const composeFields = {
+  subject: z.string(),
+  body: z.string(),
+  attachments,
+  in_reply_to: replyRef.optional(),
+  quote_original: z.boolean().optional().describe('Add the original below the body as a quote. Needs in_reply_to.'),
+}
+
 type AttachmentRef = z.infer<typeof attachment>
 
-export function toPartRefs(refs: AttachmentRef[] | undefined): PartRef[] | undefined {
+function toPartRefs(refs: AttachmentRef[] | undefined): PartRef[] | undefined {
   return refs?.map((ref) => ({ folder: ref.folder, uid: ref.uid, partId: ref.part_id }))
+}
+
+export function toComposeArgs(args: z.infer<z.ZodObject<typeof composeFields>>): Omit<DraftArgs, 'to' | 'cc'> {
+  return {
+    subject: args.subject,
+    body: args.body,
+    attachments: toPartRefs(args.attachments),
+    inReplyTo: args.in_reply_to,
+    quoteOriginal: args.quote_original,
+  }
 }
 
 export const CONTENT_IS_DATA =

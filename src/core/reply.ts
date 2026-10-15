@@ -1,6 +1,6 @@
 import type { MessageEnvelopeObject } from 'imapflow'
 import { ToolError } from '../errors.js'
-import type { QuoteSource } from '../safety/render.js'
+import type { QuoteSource } from '../safety/outgoing.js'
 import { makeUntrusted } from '../safety/untrusted.js'
 import { formatAddress } from './address.js'
 import type { ImapSession } from './client.js'

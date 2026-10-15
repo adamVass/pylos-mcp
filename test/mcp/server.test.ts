@@ -7,13 +7,8 @@ import { makeCoreApi, type CoreApi } from '../../src/core/api.js'
 import { ImapSession } from '../../src/core/client.js'
 import { ToolError } from '../../src/errors.js'
 import { buildServer } from '../../src/mcp/server.js'
-import {
-  FENCE_CLOSE,
-  FENCE_OPEN,
-  fenceMarkers,
-  renderConfirmation,
-  type SendProposal,
-} from '../../src/safety/render.js'
+import { renderConfirmation, type SendProposal } from '../../src/safety/outgoing.js'
+import { FENCE_CLOSE, FENCE_OPEN, fenceMarkers } from '../../src/safety/render.js'
 import { nonceOf, renderableEmail } from '../unit/helpers.js'
 import { makeUntrusted } from '../../src/safety/untrusted.js'
 
