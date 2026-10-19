@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { Config } from '../config.js'
-import type { CoreApi } from '../core/api.js'
+import type { Capability } from '../config.js'
+import type { Account } from '../core/api.js'
+import { eligible } from './accounts.js'
 import { registerDeleteTools } from './tools/delete.js'
 import { registerDraftTools } from './tools/drafts.js'
 import { registerManageTools } from './tools/manage.js'
@@ -28,16 +29,21 @@ const SERVER_INFO = {
   ],
 }
 
-// a disabled capability's tools are never registered, so the model cannot be argued into calling them
-export function buildServer(cfg: Config, core: CoreApi): McpServer {
+const TIERS: [Capability, (server: McpServer, accounts: Account[]) => void][] = [
+  ['read', registerReadTools],
+  ['drafts', registerDraftTools],
+  ['manage', registerManageTools],
+  ['delete', registerDeleteTools],
+  ['send', registerSendTools],
+  ['sieve-read', registerSieveTools],
+]
+
+// a tier no account enables is never registered, so the model cannot be argued into calling it
+export function buildServer(accounts: Account[]): McpServer {
   const server = new McpServer(SERVER_INFO)
-
-  registerReadTools(server, cfg, core)
-  if (cfg.capabilities.has('drafts')) registerDraftTools(server, cfg, core)
-  if (cfg.capabilities.has('manage')) registerManageTools(server, core)
-  if (cfg.capabilities.has('delete')) registerDeleteTools(server, core)
-  if (cfg.capabilities.has('send')) registerSendTools(server, cfg, core)
-  if (cfg.capabilities.has('sieve-read')) registerSieveTools(server, cfg, core)
-
+  for (const [tier, register] of TIERS) {
+    const tierAccounts = eligible(accounts, tier)
+    if (tierAccounts.length > 0) register(server, tierAccounts)
+  }
   return server
 }

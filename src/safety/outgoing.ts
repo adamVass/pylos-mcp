@@ -44,6 +44,7 @@ export function renderQuote(q: QuoteSource, detect: DetectOptions): string {
 
 /** everything the account owner is shown before a send under SEND_CONFIRM */
 export interface SendProposal {
+  account?: string
   from: string
   to: string[]
   cc: string[]
@@ -78,6 +79,7 @@ export function renderConfirmation(p: SendProposal): string {
       ? `The assistant wrote the recipients, subject and message below. The quoted original at the end was added by this server from ${line(p.quotedFrom.folder)} uid ${p.quotedFrom.uid}. Read all of it before accepting.`
       : 'The assistant wrote the recipients, subject and message below. Read all of it before accepting.',
     '',
+    ...(p.account ? [`Account: ${p.account}`] : []),
     `From: ${p.from}`,
     `To: ${p.to.map((a) => visible(a)).join(', ')}`,
     ...(p.cc.length > 0 ? [`Cc: ${p.cc.map((a) => visible(a)).join(', ')}`] : []),

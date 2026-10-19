@@ -102,3 +102,12 @@ it('the tool description states the policy in force', () => {
   expect(sendPolicyClause(['*'])).toMatch(/any recipient/)
   expect(sendPolicyClause(['a@x.example'])).toMatch(/SEND_ALLOWLIST/)
 })
+
+it('in multi mode the policy names the account and its own variable', () => {
+  expect(sendPolicyClause(undefined, 'work')).toBe(
+    'From work, sending is currently closed: SEND_ALLOWLIST__WORK is not configured, and every send from it will be refused until the account owner sets it.',
+  )
+  expect(sendPolicyClause(['a@x.example'], 'work')).toBe(
+    'From work, only recipients covered by SEND_ALLOWLIST__WORK can be addressed.',
+  )
+})

@@ -758,3 +758,14 @@ it('the confirmation names where a quoted original came from', () => {
     'The assistant wrote the recipients, subject and message below. The quoted original at the end was added by this server from INBOX uid 42. Read all of it before accepting.',
   )
 })
+
+it('the dialog names the account when there are several', () => {
+  const base = { from: 'me@x.example', to: ['a@x.example'], cc: [], subject: 's', body: 'b', attachments: [] }
+  const lines = renderConfirmation({ ...base, account: 'work' }).split('\n')
+  expect(lines[lines.indexOf('From: me@x.example') - 1]).toBe('Account: work')
+  expect(
+    renderConfirmation(base)
+      .split('\n')
+      .some((l) => l.startsWith('Account:')),
+  ).toBe(false)
+})

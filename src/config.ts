@@ -7,10 +7,11 @@ import type { MicrosoftAuthConfig } from './core/oauth.js'
 import { isAllowlistEntry } from './core/address.js'
 import type { DetectOptions } from './safety/detect.js'
 
-type Capability = 'read' | 'drafts' | 'manage' | 'send' | 'delete' | 'sieve-read'
+export type Capability = 'read' | 'drafts' | 'manage' | 'send' | 'delete' | 'sieve-read'
 
 export interface Config {
   user: string
+  account?: string // the account name in multi mode, absent in single mode
   password?: string // present iff microsoft is absent
   microsoft?: MicrosoftAuthConfig // present iff the preset signs in through Microsoft
   imap: { host: string; port: number; starttls: boolean }
@@ -107,16 +108,16 @@ const PRESETS: ReadonlyMap<string, Preset> = new Map([
   ],
 ])
 
-/** pylos-mcp's own public client registration. Not a secret: a public client has none. */
 /** the default, and the port smtp.ts speaks TLS on from the first byte instead of upgrading */
 export const SMTP_IMPLICIT_TLS_PORT = 465
 
+/** pylos-mcp's own public client registration. Not a secret: a public client has none. */
 export const MICROSOFT_CLIENT_ID = '45dd6df5-9736-4657-8111-fe9c810aba3b'
 const OUTLOOK_IMAP_SCOPE = 'https://outlook.office.com/IMAP.AccessAsUser.All'
 const OUTLOOK_SMTP_SCOPE = 'https://outlook.office.com/SMTP.Send'
 const MAX_TENANT_CHARS = 100
 
-const ALL_CAPABILITIES: readonly Capability[] = ['read', 'drafts', 'manage', 'send', 'delete', 'sieve-read']
+export const ALL_CAPABILITIES: readonly Capability[] = ['read', 'drafts', 'manage', 'send', 'delete', 'sieve-read']
 const CAPABILITY_SET: ReadonlySet<string> = new Set(ALL_CAPABILITIES)
 
 const positiveIntSchema = z.coerce.number().int().positive()
@@ -167,46 +168,43 @@ function resolveProvider(provider: string | undefined): Preset | undefined {
 
 const PASSWORD_CMD_TIMEOUT_MS = 60_000
 
-function resolvePassword(env: Record<string, string | undefined>): string {
+function checkPasswordSource(env: Record<string, string | undefined>): void {
   const hasPassword = env.EMAIL_PASSWORD !== undefined
   const hasCmd = env.EMAIL_PASSWORD_CMD !== undefined
 
   if (hasPassword && hasCmd) {
     throw new ConfigError('set only one of EMAIL_PASSWORD or EMAIL_PASSWORD_CMD, not both')
   }
-  // An empty password is not a password: loading it successfully would surface
-  // much later as an IMAP auth rejection. Only the emptiness is checked, never
-  // the value, so what is returned is whatever was configured.
-  if (hasPassword) {
-    const password = env.EMAIL_PASSWORD as string
-    if (password.trim() === '') {
-      throw new ConfigError('EMAIL_PASSWORD is set but empty. Set it to the account password')
-    }
-    return password
+  // loading an empty password would surface much later as an IMAP auth rejection
+  if (hasPassword && (env.EMAIL_PASSWORD as string).trim() === '') {
+    throw new ConfigError('EMAIL_PASSWORD is set but empty. Set it to the account password')
   }
-  if (hasCmd) {
-    let output: string
-    try {
-      output = execSync(env.EMAIL_PASSWORD_CMD as string, {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-        // stdin is closed, so a command waiting on a prompt would hang startup forever
-        timeout: PASSWORD_CMD_TIMEOUT_MS,
-      })
-    } catch (err) {
-      // never echo the command or its output, either may contain secrets
-      if ((err as NodeJS.ErrnoException).code === 'ETIMEDOUT') {
-        throw new ConfigError(`EMAIL_PASSWORD_CMD did not finish within ${PASSWORD_CMD_TIMEOUT_MS / 1000} seconds`)
-      }
-      throw new ConfigError('EMAIL_PASSWORD_CMD failed')
-    }
-    const password = output.replace(/\n$/, '')
-    if (password.trim() === '') {
-      throw new ConfigError('EMAIL_PASSWORD_CMD produced no password. It must print the password on stdout')
-    }
-    return password
+  if (!hasPassword && !hasCmd) {
+    throw new ConfigError('set one of EMAIL_PASSWORD or EMAIL_PASSWORD_CMD to provide the account password')
   }
-  throw new ConfigError('set one of EMAIL_PASSWORD or EMAIL_PASSWORD_CMD to provide the account password')
+}
+
+function runPasswordCommand(command: string): string {
+  let output: string
+  try {
+    output = execSync(command, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      // stdin is closed, so a command waiting on a prompt would hang startup forever
+      timeout: PASSWORD_CMD_TIMEOUT_MS,
+    })
+  } catch (err) {
+    // never echo the command or its output, either may contain secrets
+    if ((err as NodeJS.ErrnoException).code === 'ETIMEDOUT') {
+      throw new ConfigError(`EMAIL_PASSWORD_CMD did not finish within ${PASSWORD_CMD_TIMEOUT_MS / 1000} seconds`)
+    }
+    throw new ConfigError('EMAIL_PASSWORD_CMD failed')
+  }
+  const password = output.replace(/\n$/, '')
+  if (password.trim() === '') {
+    throw new ConfigError('EMAIL_PASSWORD_CMD produced no password. It must print the password on stdout')
+  }
+  return password
 }
 
 function parseCapabilities(raw: string | undefined): Set<Capability> {
@@ -235,7 +233,7 @@ function expandHome(dir: string): string {
 }
 
 // MCPB substitutes "" for optional fields left blank, so "" has to read as unset
-function withoutEmptyValues(env: Record<string, string | undefined>): Record<string, string | undefined> {
+export function withoutEmptyValues(env: Record<string, string | undefined>): Record<string, string | undefined> {
   const copy: Record<string, string | undefined> = {}
   for (const [key, value] of Object.entries(env)) {
     copy[key] = value === '' ? undefined : value
@@ -244,7 +242,7 @@ function withoutEmptyValues(env: Record<string, string | undefined>): Record<str
 }
 
 function microsoftAuth(env: Record<string, string | undefined>, capabilities: Set<Capability>): MicrosoftAuthConfig {
-  // checked before resolvePassword would run EMAIL_PASSWORD_CMD for a password that can never be used
+  // a password that can never be used must not get its command run
   if (env.EMAIL_PASSWORD !== undefined || env.EMAIL_PASSWORD_CMD !== undefined) {
     throw new ConfigError('PROVIDER=outlook signs in through the browser. Remove EMAIL_PASSWORD and EMAIL_PASSWORD_CMD')
   }
@@ -274,6 +272,14 @@ export function passwordOf(cfg: Config): string {
 }
 
 export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
+  return prepareConfig(rawEnv).resolve()
+}
+
+/** validates everything without running EMAIL_PASSWORD_CMD, which resolve() does */
+export function prepareConfig(rawEnv: Record<string, string | undefined>): {
+  config: Omit<Config, 'password'>
+  resolve(): Config
+} {
   const env = withoutEmptyValues(rawEnv)
 
   const user = requireString('EMAIL_USER', env.EMAIL_USER)
@@ -284,7 +290,7 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
   if (!microsoft && (env.MS_CLIENT_ID !== undefined || env.MS_TENANT !== undefined)) {
     throw new ConfigError('MS_CLIENT_ID and MS_TENANT apply only with PROVIDER=outlook')
   }
-  const password = microsoft ? undefined : resolvePassword(env)
+  if (!microsoft) checkPasswordSource(env)
 
   const imapHost = env.IMAP_HOST ?? preset?.imapHost
   if (!imapHost) {
@@ -365,9 +371,8 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
     throw new ConfigError(`AUTHSERV_ID entry "${badId}" is not a server name, or a .domain suffix`)
   }
 
-  return {
+  const config: Omit<Config, 'password'> = {
     user,
-    password,
     microsoft,
     imap,
     smtp,
@@ -385,4 +390,10 @@ export function loadConfig(rawEnv: Record<string, string | undefined>): Config {
     authservIds,
     detect,
   }
+  const command = env.EMAIL_PASSWORD_CMD
+  const resolve = (): Config => {
+    if (microsoft) return config
+    return { ...config, password: command === undefined ? (env.EMAIL_PASSWORD as string) : runPasswordCommand(command) }
+  }
+  return { config, resolve }
 }

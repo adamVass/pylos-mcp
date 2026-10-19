@@ -129,3 +129,20 @@ it('the CoreApi seam hands the confirmation through to core', async () => {
   const core = makeCoreApi(cfg, fakeSession(client))
   await expect(core.sendEmail({ ...ARGS, attachments: [] }, async () => false)).rejects.toThrow(/did not accept/)
 })
+
+it('the proposal names the account it sends from', async () => {
+  const { client } = harness()
+  let shown: SendProposal | undefined
+  await sendEmail(
+    fakeSession(client),
+    { ...cfg, account: 'work' },
+    new SendState(),
+    ARGS,
+    new ComposeBudget(),
+    async (proposal) => {
+      shown = proposal
+      return false
+    },
+  ).catch(() => undefined)
+  expect(shown?.account).toBe('work')
+})

@@ -1,18 +1,14 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { ConfigError, loadConfig, type Config } from './config.js'
-import { makeCoreApi } from './core/api.js'
-import { ImapSession } from './core/client.js'
-import { MicrosoftAuth } from './core/oauth.js'
+import { loadAccounts, type ParsedAccount } from './accounts.js'
+import { ConfigError } from './config.js'
+import { openAccounts } from './core/api.js'
 import { buildServer } from './mcp/server.js'
 
-/**
- * Config errors are the only fatal ones, and this exits before an ImapSession or
- * transport exists, so a bad config never opens a socket.
- */
-function loadConfigOrExit(): Config {
+/** exits before any ImapSession or transport exists, so a bad config never opens a socket */
+function loadAccountsOrExit(): ParsedAccount[] {
   try {
-    return loadConfig(process.env)
+    return loadAccounts(process.env)
   } catch (err) {
     if (err instanceof ConfigError) {
       console.error('pylos-mcp: ' + err.message)
@@ -23,17 +19,12 @@ function loadConfigOrExit(): Config {
 }
 
 async function main(): Promise<void> {
-  const cfg = loadConfigOrExit()
-
-  // Exactly one ImapSession/CoreApi for the process: the send tier's session
-  // cap and the IMAP connection's single-connection design both assume it.
-  const tokens = cfg.microsoft ? new MicrosoftAuth(cfg.user, cfg.microsoft) : undefined
-  const session = new ImapSession(cfg, tokens)
-  const core = makeCoreApi(cfg, session)
-  const server = buildServer(cfg, core)
+  // one session per account, but the send cap and compose budget span all of them
+  const { accounts, close } = openAccounts(loadAccountsOrExit())
+  const server = buildServer(accounts)
 
   const shutdown = (): void => {
-    session.close().finally(() => process.exit(0))
+    close().finally(() => process.exit(0))
   }
   process.once('SIGINT', shutdown)
   process.once('SIGTERM', shutdown)

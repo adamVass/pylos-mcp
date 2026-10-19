@@ -9,8 +9,9 @@ import { ToolError } from '../../src/errors.js'
 import { buildServer } from '../../src/mcp/server.js'
 import { renderConfirmation, type SendProposal } from '../../src/safety/outgoing.js'
 import { FENCE_CLOSE, FENCE_OPEN, fenceMarkers } from '../../src/safety/render.js'
-import { nonceOf, renderableEmail } from '../unit/helpers.js'
+import { nonceOf } from '../unit/helpers.js'
 import { makeUntrusted } from '../../src/safety/untrusted.js'
+import { type Calls, email, fakeCore } from './fake-core.js'
 
 const BASE_ENV = { EMAIL_USER: 'tester@example.com', EMAIL_PASSWORD: 'pw', IMAP_HOST: 'localhost' }
 
@@ -23,91 +24,6 @@ const DELETE_TOOLS = ['delete_email']
 const SEND_TOOLS = ['send_email']
 const SIEVE_TOOLS = ['get_sieve_script', 'list_sieve_scripts']
 
-const summary = () => ({
-  folder: 'INBOX',
-  uid: 7,
-  date: new Date('2026-08-05T10:00:00Z'),
-  sizeBytes: 4200,
-  from: makeUntrusted('Alice <alice@x.example>'),
-  subject: makeUntrusted('Quarterly report'),
-  seen: false,
-  flagged: true,
-})
-
-const email = () =>
-  renderableEmail({
-    to: makeUntrusted('tester@example.com'),
-    subject: makeUntrusted('Quarterly report'),
-    body: makeUntrusted('Body text here'),
-  })
-
-type Calls = Record<string, unknown[]>
-
-function fakeCore(calls: Calls): CoreApi {
-  return {
-    async searchEmails(args) {
-      calls.searchEmails = [args]
-      return { total: 3, items: [summary()] }
-    },
-    async getEmail(folder, uid) {
-      calls.getEmail = [folder, uid]
-      return email()
-    },
-    async getThread(folder, uid) {
-      calls.getThread = [folder, uid]
-      return { items: [summary()], omitted: 0, capped: false }
-    },
-    async getAttachment(folder, uid, partId) {
-      calls.getAttachment = [folder, uid, partId]
-      return { path: '/home/tester/Downloads/report.pdf', sizeBytes: 1_234_567, contentType: 'application/pdf' }
-    },
-    async listFolders() {
-      calls.listFolders = []
-      return [{ path: 'INBOX', specialUse: '\\Inbox', messages: 12 }, { path: 'Archive' }]
-    },
-    async createDraft(args) {
-      calls.createDraft = [args]
-      return { folder: 'Drafts', uid: 42, recipients: [...(args.to ?? []), ...(args.cc ?? [])] }
-    },
-    async moveEmail(folder, uid, destination) {
-      calls.moveEmail = [folder, uid, destination]
-    },
-    async setFlags(folder, uid, flags) {
-      calls.setFlags = [folder, uid, flags]
-    },
-    async deleteEmail(folder, uid) {
-      calls.deleteEmail = [folder, uid]
-      return { trashFolder: 'Trash' }
-    },
-    async sendEmail(args) {
-      calls.sendEmail = [args]
-      // `off` throughout this file, since a saved copy would append a clause to
-      // every send result asserted here
-      return {
-        accepted: [...args.to, ...(args.cc ?? [])],
-        rejected: [],
-        sent: 2,
-        copy: { status: 'off' },
-        reply: args.inReplyTo && { ref: args.inReplyTo, answered: true },
-      }
-    },
-    async listSieveScripts() {
-      calls.listSieveScripts = []
-      return [
-        { name: makeUntrusted('filters'), active: true },
-        { name: makeUntrusted('holiday'), active: false },
-      ]
-    },
-    async getSieveScript(name) {
-      calls.getSieveScript = [name]
-      return {
-        content: makeUntrusted('require "fileinto";\nif header :contains "subject" "spam" { fileinto "Trash"; }'),
-        cutShort: false,
-      }
-    },
-  }
-}
-
 const openClients: Client[] = []
 
 async function startServer(
@@ -117,7 +33,7 @@ async function startServer(
 ): Promise<{ client: Client; calls: Calls }> {
   const calls: Calls = {}
   const cfg = loadConfig({ ...BASE_ENV, ...env })
-  const server = buildServer(cfg, { ...fakeCore(calls), ...overrides })
+  const server = buildServer([{ cfg, core: { ...fakeCore(calls), ...overrides } }])
 
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   openClients.push(client)

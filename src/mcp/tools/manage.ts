@@ -1,12 +1,14 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import type { CoreApi } from '../../core/api.js'
+import type { Account } from '../../core/api.js'
 import { ToolError } from '../../errors.js'
 import { renderFlagsUpdated, renderMoved } from '../../safety/render.js'
+import { accountField, pick } from '../accounts.js'
 import { run } from '../run.js'
 import { folder, uid } from './bounds.js'
 
-export function registerManageTools(server: McpServer, core: CoreApi): void {
+export function registerManageTools(server: McpServer, accounts: Account[]): void {
+  const account = accountField(accounts)
   server.registerTool(
     'move_email',
     {
@@ -17,6 +19,7 @@ export function registerManageTools(server: McpServer, core: CoreApi): void {
         folder,
         uid,
         destination: z.string().min(1).describe('Folder to move the message into. Must already exist.'),
+        ...account,
       },
       // IMAP never reuses a uid within a mailbox, so a repeat call finds nothing
       // to move and leaves the mailbox exactly as the first call left it
@@ -27,11 +30,13 @@ export function registerManageTools(server: McpServer, core: CoreApi): void {
         openWorldHint: false,
       },
     },
-    (args) =>
-      run(async () => {
+    (args) => {
+      const { name, core } = pick(accounts, args)
+      return run(async () => {
         await core.moveEmail(args.folder, args.uid, args.destination)
         return renderMoved(args.uid, args.folder, args.destination)
-      }),
+      }, name)
+    },
   )
 
   server.registerTool(
@@ -43,6 +48,7 @@ export function registerManageTools(server: McpServer, core: CoreApi): void {
         uid,
         seen: z.boolean().optional().describe('true marks the message read, false marks it unread.'),
         flagged: z.boolean().optional().describe('true flags the message, false clears the flag.'),
+        ...account,
       },
       annotations: {
         readOnlyHint: false,
@@ -51,13 +57,15 @@ export function registerManageTools(server: McpServer, core: CoreApi): void {
         openWorldHint: false,
       },
     },
-    (args) =>
-      run(async () => {
+    (args) => {
+      const { name, core } = pick(accounts, args)
+      return run(async () => {
         if (args.seen === undefined && args.flagged === undefined) {
           throw new ToolError('policy', 'set_flags needs at least one of seen or flagged')
         }
         await core.setFlags(args.folder, args.uid, { seen: args.seen, flagged: args.flagged })
         return renderFlagsUpdated(args.uid, { seen: args.seen, flagged: args.flagged })
-      }),
+      }, name)
+    },
   )
 }

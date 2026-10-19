@@ -207,6 +207,7 @@ async function confirmSend(
   try {
     const prepared = await prepareBody(session, cfg, args)
     const proposal: SendProposal = {
+      account: cfg.account,
       from: cfg.user,
       to: args.to,
       cc: args.cc ?? [],

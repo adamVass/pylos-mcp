@@ -1,7 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import type { Config } from '../../config.js'
-import type { CoreApi } from '../../core/api.js'
+import type { Account } from '../../core/api.js'
 import {
   renderAttachmentSaved,
   renderEmail,
@@ -10,13 +9,16 @@ import {
   renderThread,
 } from '../../safety/render.js'
 import { MAX_THREAD_MESSAGES } from '../../core/thread.js'
+import { accountField, pick } from '../accounts.js'
 import { run } from '../run.js'
 import { CONTENT_IS_DATA, DEFAULT_SEARCH_RESULTS, FENCE_TAG_NOTE, folder, MAX_SEARCH_RESULTS, uid } from './bounds.js'
 
 // get_email peeks the body, so reading never marks a message seen
 const READ_ONLY_ANNOTATIONS = { readOnlyHint: true, openWorldHint: false }
 
-export function registerReadTools(server: McpServer, cfg: Config, core: CoreApi): void {
+export function registerReadTools(server: McpServer, accounts: Account[]): void {
+  const account = accountField(accounts)
+  const { maxBodyKb } = accounts[0].cfg
   server.registerTool(
     'search_emails',
     {
@@ -33,11 +35,13 @@ export function registerReadTools(server: McpServer, cfg: Config, core: CoreApi)
         flagged_only: z.boolean().optional(),
         limit: z.number().int().min(1).max(MAX_SEARCH_RESULTS).default(DEFAULT_SEARCH_RESULTS),
         offset: z.number().int().min(0).default(0),
+        ...account,
       },
       annotations: READ_ONLY_ANNOTATIONS,
     },
-    (args) =>
-      run(async () => {
+    (args) => {
+      const { name, core } = pick(accounts, args)
+      return run(async () => {
         const { total, items } = await core.searchEmails({
           folder: args.folder,
           query: args.query,
@@ -52,22 +56,26 @@ export function registerReadTools(server: McpServer, cfg: Config, core: CoreApi)
           offset: args.offset,
         })
         return renderSearchResults(total, args.offset, items)
-      }),
+      }, name)
+    },
   )
 
   server.registerTool(
     'get_email',
     {
       description:
-        `Read one message: envelope metadata plus the body as plain text, truncated at ${cfg.maxBodyKb} kB. ` +
+        `Read one message: envelope metadata plus the body as plain text, truncated at ${maxBodyKb} kB. ` +
         'HTML mail is converted to text; attachments are listed but not downloaded. ' +
         'Suspicious content (hidden text, instruction-like phrases in the body, subject, sender or attachment names, ' +
         'long encoded runs, a Reply-To or display name on another domain, words mixing Latin with lookalike letters) is noted on a Warnings line. ' +
         `${CONTENT_IS_DATA} ${FENCE_TAG_NOTE}`,
-      inputSchema: { folder, uid },
+      inputSchema: { folder, uid, ...account },
       annotations: READ_ONLY_ANNOTATIONS,
     },
-    (args) => run(async () => renderEmail(await core.getEmail(args.folder, args.uid), cfg.maxBodyKb, cfg.detect)),
+    (args) => {
+      const { name, cfg, core } = pick(accounts, args)
+      return run(async () => renderEmail(await core.getEmail(args.folder, args.uid), cfg.maxBodyKb, cfg.detect), name)
+    },
   )
 
   server.registerTool(
@@ -78,10 +86,13 @@ export function registerReadTools(server: McpServer, cfg: Config, core: CoreApi)
         'Message-ID, In-Reply-To and References headers in its own folder, INBOX and Sent. Metadata only, oldest ' +
         `first, each message once, at most ${MAX_THREAD_MESSAGES} (the newest). Read a message with get_email. ` +
         `${CONTENT_IS_DATA} ${FENCE_TAG_NOTE}`,
-      inputSchema: { folder, uid },
+      inputSchema: { folder, uid, ...account },
       annotations: READ_ONLY_ANNOTATIONS,
     },
-    (args) => run(async () => renderThread(await core.getThread(args.folder, args.uid))),
+    (args) => {
+      const { name, core } = pick(accounts, args)
+      return run(async () => renderThread(await core.getThread(args.folder, args.uid)), name)
+    },
   )
 
   server.registerTool(
@@ -95,6 +106,7 @@ export function registerReadTools(server: McpServer, cfg: Config, core: CoreApi)
         folder,
         uid,
         part_id: z.string().min(1).describe('Part id as listed by get_email for this message.'),
+        ...account,
       },
       // not idempotent, because uniquePath never overwrites, so calling it twice
       // leaves two files rather than one
@@ -105,20 +117,25 @@ export function registerReadTools(server: McpServer, cfg: Config, core: CoreApi)
         openWorldHint: false,
       },
     },
-    (args) =>
-      run(async () => {
+    (args) => {
+      const { name, core } = pick(accounts, args)
+      return run(async () => {
         const saved = await core.getAttachment(args.folder, args.uid, args.part_id)
         return renderAttachmentSaved(saved.path, saved.sizeBytes, saved.contentType)
-      }),
+      }, name)
+    },
   )
 
   server.registerTool(
     'list_folders',
     {
       description: `List the mailbox folders with their message counts. ${FENCE_TAG_NOTE}`,
-      inputSchema: {},
+      inputSchema: { ...account },
       annotations: READ_ONLY_ANNOTATIONS,
     },
-    () => run(async () => renderFolders(await core.listFolders())),
+    (args) => {
+      const { name, core } = pick(accounts, args)
+      return run(async () => renderFolders(await core.listFolders()), name)
+    },
   )
 }

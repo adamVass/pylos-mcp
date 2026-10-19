@@ -1,10 +1,12 @@
 // Every tool reaches the network through this interface and nothing else, which
 // is what lets the MCP tests run in process with no server at all.
 
+import type { ParsedAccount } from '../accounts.js'
 import type { Config } from '../config.js'
 import { ToolError } from '../errors.js'
 import type { RenderableEmail, RenderableSummary } from '../safety/render.js'
-import type { ImapSession } from './client.js'
+import { ImapSession } from './client.js'
+import { MicrosoftAuth } from './oauth.js'
 import { ComposeBudget, createDraft, type DraftArgs, type DraftResult } from './draft.js'
 import { listFolders, type FolderSummary } from './folders.js'
 import { deleteEmail, moveEmail, refuseTrash, setFlags, type DeleteResult } from './mailbox-ops.js'
@@ -29,9 +31,17 @@ export interface CoreApi {
   getSieveScript(name: string): Promise<SieveScript>
 }
 
-export function makeCoreApi(cfg: Config, session: ImapSession): CoreApi {
-  const sendState = new SendState()
-  const composeBudget = new ComposeBudget()
+export interface Shared {
+  sendState: SendState
+  composeBudget: ComposeBudget
+}
+
+export function makeCoreApi(
+  cfg: Config,
+  session: ImapSession,
+  shared: Shared = { sendState: new SendState(), composeBudget: new ComposeBudget() },
+): CoreApi {
+  const { sendState, composeBudget } = shared
 
   return {
     searchEmails: (args) => searchEmails(session, args),
@@ -66,4 +76,27 @@ export function makeCoreApi(cfg: Config, session: ImapSession): CoreApi {
 
 async function notEnabled(): Promise<never> {
   throw new ToolError('server', 'capability not enabled')
+}
+
+export interface Account {
+  name?: string
+  cfg: Config
+  core: CoreApi
+}
+
+export function openAccounts(parsed: ParsedAccount[]): { accounts: Account[]; close(): Promise<void> } {
+  const shared: Shared = { sendState: new SendState(), composeBudget: new ComposeBudget() }
+  const sessions: ImapSession[] = []
+  const accounts = parsed.map(({ name, cfg }) => {
+    const tokens = cfg.microsoft ? new MicrosoftAuth(cfg.user, cfg.microsoft) : undefined
+    const session = new ImapSession(cfg, tokens)
+    sessions.push(session)
+    return { name, cfg, core: makeCoreApi(cfg, session, shared) }
+  })
+  return {
+    accounts,
+    close: async () => {
+      await Promise.allSettled(sessions.map((s) => s.close()))
+    },
+  }
 }

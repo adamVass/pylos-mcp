@@ -6,7 +6,7 @@ import type { ImapFlow } from 'imapflow'
 import { simpleParser } from 'mailparser'
 import { SMTPServer } from 'smtp-server'
 import type { Config } from '../../src/config.js'
-import { makeCoreApi } from '../../src/core/api.js'
+import { makeCoreApi, openAccounts } from '../../src/core/api.js'
 import { ImapSession } from '../../src/core/client.js'
 import { markAnswered } from '../../src/core/mailbox-ops.js'
 import { ComposeBudget } from '../../src/core/draft.js'
@@ -152,6 +152,23 @@ describe('sendEmail against an in-process SMTP server', () => {
     args: Parameters<typeof sendEmail>[3],
     { session = idleSession(), cfg = sendConfig(), state = new SendState() } = {},
   ) => sendEmail(session, cfg, state, args, new ComposeBudget())
+
+  itIntegration('two accounts share one send cap', async () => {
+    const { accounts, close } = openAccounts([
+      { name: 'a', cfg: sendConfig({ SEND_SESSION_CAP: '1' }) },
+      { name: 'b', cfg: sendConfig({ SEND_SESSION_CAP: '1' }) },
+    ])
+    const args = { to: [ALLOWED], subject: 'cap', body: 'b' }
+    try {
+      await expect(accounts[0].core.sendEmail(args)).resolves.toBeDefined()
+      await expect(accounts[1].core.sendEmail(args)).rejects.toThrow(
+        'session send cap reached (SEND_SESSION_CAP=1). Restart the server to send again',
+      )
+      expect(deliveries).toHaveLength(1)
+    } finally {
+      await close()
+    }
+  })
 
   itIntegration('signs in to the relay with the Microsoft access token', async () => {
     const { cfg, session } = outlookSession(ACCESS_TOKEN)

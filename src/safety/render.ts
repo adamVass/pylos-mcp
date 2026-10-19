@@ -351,8 +351,9 @@ export function renderSent(
   cap: number,
   copy: SentCopy,
   reply?: { ref: MessageRef; answered: boolean },
+  acrossAccounts = false,
 ): string {
-  const used = `(${sent} of ${cap} session sends used).`
+  const used = `(${sent} of ${cap} session sends used${acrossAccounts ? ', across all accounts' : ''}).`
   const answering = replyClause(reply?.ref)
   const head =
     accepted.length > 0

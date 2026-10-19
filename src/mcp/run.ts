@@ -3,20 +3,22 @@ import { ToolError } from '../errors.js'
 import { boundErrorMessage } from '../safety/render.js'
 
 /**
- * The error boundary for every tool. Without it the SDK's own handler answers a
- * thrown error with `error.message`, which for anything raised inside imapflow
- * or nodemailer is raw server text. Only a ToolError, whose message is written
- * by us, is passed through, and even that is bounded on the way out because a
- * ToolError message can embed server-influenced text.
+ * The error boundary for every tool. Left to the SDK, a thrown error answers with
+ * its raw message, which inside imapflow or nodemailer is server text, so only a
+ * ToolError passes, and bounded, since its message can embed server text.
+ * The account head is added here so no tool can leave it out.
  */
-export async function run(fn: () => Promise<string>): Promise<CallToolResult> {
+export async function run(fn: () => Promise<string>, account?: string): Promise<CallToolResult> {
+  const head = account === undefined ? '' : `Account: ${account}\n`
+  const errorHead =
+    account === undefined ? '' : `Account: ${account} (its account settings end in __${account.toUpperCase()})\n`
   try {
-    return { content: [{ type: 'text', text: await fn() }] }
+    return { content: [{ type: 'text', text: head + (await fn()) }] }
   } catch (err) {
     if (err instanceof ToolError) {
-      return { content: [{ type: 'text', text: boundErrorMessage(err.message) }], isError: true }
+      return { content: [{ type: 'text', text: errorHead + boundErrorMessage(err.message) }], isError: true }
     }
     console.error('[pylos-mcp]', err)
-    return { content: [{ type: 'text', text: 'internal error. See server log' }], isError: true }
+    return { content: [{ type: 'text', text: `${errorHead}internal error. See server log` }], isError: true }
   }
 }

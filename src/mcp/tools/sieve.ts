@@ -1,8 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import type { Config } from '../../config.js'
-import type { CoreApi } from '../../core/api.js'
+import type { Account } from '../../core/api.js'
 import { renderSieveList, renderSieveScript } from '../../safety/render.js'
+import { accountField, pick } from '../accounts.js'
 import { run } from '../run.js'
 import { FENCE_TAG_NOTE, MAX_SIEVE_NAME_CHARS } from './bounds.js'
 
@@ -17,7 +17,8 @@ const scriptName = z
 // the client has no PUTSCRIPT or SETACTIVE path, so read-only is a fact, not a promise
 const SIEVE_ANNOTATIONS = { readOnlyHint: true, openWorldHint: false }
 
-export function registerSieveTools(server: McpServer, cfg: Config, core: CoreApi): void {
+export function registerSieveTools(server: McpServer, accounts: Account[]): void {
+  const account = accountField(accounts)
   server.registerTool(
     'list_sieve_scripts',
     {
@@ -25,10 +26,13 @@ export function registerSieveTools(server: McpServer, cfg: Config, core: CoreApi
         'List the Sieve filter scripts stored on the mail server, marking the active one. Read-only: ' +
         'this server can never create, change or activate a script. ' +
         FENCE_TAG_NOTE,
-      inputSchema: {},
+      inputSchema: { ...account },
       annotations: SIEVE_ANNOTATIONS,
     },
-    () => run(async () => renderSieveList(await core.listSieveScripts())),
+    (args) => {
+      const { name, core } = pick(accounts, args)
+      return run(async () => renderSieveList(await core.listSieveScripts()), name)
+    },
   )
 
   server.registerTool(
@@ -40,9 +44,13 @@ export function registerSieveTools(server: McpServer, cfg: Config, core: CoreApi
         FENCE_TAG_NOTE,
       inputSchema: {
         name: scriptName.describe('Script name exactly as list_sieve_scripts reported it.'),
+        ...account,
       },
       annotations: SIEVE_ANNOTATIONS,
     },
-    (args) => run(async () => renderSieveScript(args.name, await core.getSieveScript(args.name), cfg.maxBodyKb)),
+    (args) => {
+      const { name, cfg, core } = pick(accounts, args)
+      return run(async () => renderSieveScript(args.name, await core.getSieveScript(args.name), cfg.maxBodyKb), name)
+    },
   )
 }
