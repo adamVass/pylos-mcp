@@ -67,6 +67,12 @@
           "description": "With PROVIDER=outlook only. Tenant ID or domain, for a single-tenant MS_CLIENT_ID.",
           "isRequired": false,
           "format": "string"
+        },
+        {
+          "name": "ACCOUNTS",
+          "description": "Names of several accounts, separated by commas, each 1 to 16 lowercase letters or digits. Each account's settings then end in __ and its name in capitals, such as EMAIL_USER__WORK. Leave the unsuffixed account settings out.",
+          "isRequired": false,
+          "format": "string"
         }
       ]
     }

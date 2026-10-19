@@ -4,6 +4,10 @@ Notable changes to pylos-mcp. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+
+- One server can read several mailboxes. `ACCOUNTS=personal,work` names them, and each account's settings take its name as a suffix, such as `EMAIL_USER__WORK`. Every tool then takes a required `account`, and each tool lists only the accounts whose capabilities allow it. A call reaches only the account it names, so attachments, replies and quotes never cross between accounts. The send cap counts sends from all accounts together. Without `ACCOUNTS`, configuration and tools stay as they are.
+
 ## [1.2.0] - 2026-10-15
 
 ### Added

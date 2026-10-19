@@ -136,6 +136,7 @@ These limits are enforced by the server.
 - No `bcc` field exists on drafts or sent mail. A bcc recipient gets a full copy while appearing nowhere in the message, which is exactly what an injected email would ask for.
 - Drafts and sent mail can attach only files already in the mailbox, named by folder, uid and part. No tool takes a file path or attaches anything from your disk.
 - Deleting moves a message to Trash. There is no expunge or permanent delete. A server that cannot move messages is refused. What your provider later does with Trash is up to the provider.
+- With several accounts, one call reaches one account. Attachments, replies and quotes come only from the account the call names, and the server never moves mail from one account to another.
 - Sieve access stays read only. No tool writes filter rules, which can forward, reply and notify even after you revoke the app password or uninstall this server.
 
 Sending stays closed with `send` on until `SEND_ALLOWLIST` names recipients. It accepts single addresses, domains as `*@example.com`, or `*` alone for anyone. With no allowlist, the refusal explains how to allow specific recipients or anyone. `SEND_CONFIRM=true` adds a confirmation dialog before every send, showing the recipients, subject, attachments and the whole message, quote included. It needs a client that supports MCP elicitation, and other clients are refused, so use drafts there. Claude Desktop does not show these dialogs yet (October 2026). Allowing anyone without it lets the assistant write to anyone unasked, the third part of the lethal trifecta. See [SECURITY.md](https://github.com/adamVass/pylos-mcp/blob/main/SECURITY.md) for the design notes.
@@ -173,6 +174,7 @@ All configuration is environment variables. They are checked when the server sta
 
 | Variable | Default | Notes |
 |---|---|---|
+| `ACCOUNTS` | none | Names of several accounts, separated by commas, each 1 to 16 lowercase letters or digits. See [Several accounts](#several-accounts). |
 | `PROVIDER` | none | One of `gmail`, `outlook`, `icloud`, `yahoo`, `gmx`, `fastmail`, `mailbox.org`, `posteo`. Fills in IMAP, SMTP and Sieve hosts and ports. `outlook` signs in through the browser instead of a password. |
 | `EMAIL_USER` | required | Account login. |
 | `EMAIL_PASSWORD` | none | App password. Either this or `EMAIL_PASSWORD_CMD` is required, except with `outlook`, which takes neither. |
@@ -204,6 +206,39 @@ All configuration is environment variables. They are checked when the server sta
 | `TLS_CA_FILE` | none | Path to a PEM CA certificate added as an extra trust anchor, for your own server with a private CA. Certificate verification cannot be turned off, this only extends what is trusted. Setting it trusts Node's bundled root store plus this file, so anchors added through `NODE_EXTRA_CA_CERTS` are not in that set. If you rely on those, point `TLS_CA_FILE` at the same certificate. |
 
 </details>
+
+## Several accounts
+
+One server can read several mailboxes, with one send cap across all of them, where two separate servers would allow two. `ACCOUNTS` names the accounts, at most 10, and each account's settings take `__` plus its name in capitals, such as `EMAIL_USER__WORK`. Without `ACCOUNTS`, nothing changes. This entry sets up a personal Gmail that drafts and sends to one listed address, and a work Outlook that keeps the default of reading and drafting:
+
+```json
+{
+  "mcpServers": {
+    "pylos-mcp": {
+      "command": "npx",
+      "args": ["-y", "pylos-mcp"],
+      "env": {
+        "ACCOUNTS": "personal,work",
+        "PROVIDER__PERSONAL": "gmail",
+        "EMAIL_USER__PERSONAL": "you@example.com",
+        "EMAIL_PASSWORD__PERSONAL": "your-app-password",
+        "CAPABILITIES__PERSONAL": "drafts,send",
+        "SEND_ALLOWLIST__PERSONAL": "friend@example.com",
+        "PROVIDER__WORK": "outlook",
+        "EMAIL_USER__WORK": "you@example.org"
+      }
+    }
+  }
+}
+```
+
+An account's settings are never taken from the unsuffixed variables, and with `ACCOUNTS` set those are refused, so an allowlist or a capability meant for one account can never reach another. `MAX_BODY_KB`, `MAX_ATTACHMENT_MB`, `DOWNLOAD_DIR`, `SEND_SESSION_CAP`, `SEND_CONFIRM`, `DRAFTS_NO_RECIPIENTS`, `STRIP_HIDDEN_TEXT` and every `FLAG_` variable apply to every account and take no suffix.
+
+Every tool then takes a required `account`, and each tool lists only the accounts whose capabilities include it, so here `send_email` offers `personal` alone. There is no default account, since a message number means something only inside its own mailbox. Every tool result starts with an `Account:` line, which keeps the assistant's references tied to the account they came from.
+
+Mistakes show at startup, grouped, each naming the variable to fix. That includes a suffix naming no account in `ACCOUNTS` and the same mailbox configured twice, meaning the same `EMAIL_USER` on the same IMAP host.
+
+The Claude Desktop bundle holds one account, since its install form cannot repeat a group of fields. For several accounts, put the entry above in a client's JSON config, Claude Desktop's `claude_desktop_config.json` included.
 
 ## Maintenance expectations
 

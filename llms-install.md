@@ -35,6 +35,8 @@ Add this entry to the client's MCP configuration, with the user's values:
 - For a provider without a preset, leave `PROVIDER` out and set `IMAP_HOST` (and `IMAP_PORT` if it is not 993).
 - If the user would rather not store the password in the config file, use `EMAIL_PASSWORD_CMD` instead of `EMAIL_PASSWORD`: a command that prints the password, such as `security find-generic-password -s pylos -w` on macOS.
 
+If the user wants several mailboxes in one server, set `ACCOUNTS` to their names, such as `personal,work`, each 1 to 16 lowercase letters or digits. Every setting for an account then ends in `__` and its name in capitals, such as `EMAIL_USER__WORK`, and the same setting without a suffix is refused. `SEND_SESSION_CAP`, `SEND_CONFIRM`, `MAX_BODY_KB`, `MAX_ATTACHMENT_MB`, `DOWNLOAD_DIR`, `DRAFTS_NO_RECIPIENTS`, `STRIP_HIDDEN_TEXT` and the `FLAG_` variables apply to every account and take no suffix. Every tool then takes `account`, so check each account with its own `list_folders` call.
+
 Leave every other setting at its default. Reading and drafting are on. Moving, sending and deleting stay off unless the user asks for them, and sending also needs `SEND_ALLOWLIST` to name who may be written to. Do not enable those on your own initiative.
 
 ## 3. Check it works

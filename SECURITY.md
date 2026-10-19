@@ -99,6 +99,13 @@ checked before it opens and again after it closes. The server learns only that
 the client answered accept. Whether a person read the dialog depends on the
 client, which can be set up to answer it automatically.
 
+With several accounts, the send cap, the limit of one confirmation dialog at a
+time and the memory budget for attachments being composed are shared, so a send
+from one account counts against all of them. An injected message read in one
+account can at worst use up the shared cap and budget. It cannot send from an
+account without `send`, since each account keeps its own capabilities and a
+call reaches only the account it names.
+
 Sieve write access is excluded rather than guarded because scanning uploaded
 scripts for dangerous commands would only be safe if this project's parser
 agreed with the mail server's parser exactly. Any disagreement between the two
