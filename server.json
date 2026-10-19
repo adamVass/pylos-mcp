@@ -15,12 +15,12 @@
     "url": "https://github.com/adamVass/pylos-mcp",
     "source": "github"
   },
-  "version": "1.2.0",
+  "version": "1.3.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "pylos-mcp",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "transport": {
         "type": "stdio"
       },

@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "pylos-mcp",
   "display_name": "pylos-mcp",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Email MCP server for Gmail, Outlook and any IMAP mailbox, hardened against prompt injection",
   "long_description": "Search, read and draft your mail while every message reaches the assistant fenced as data, with a Warnings line naming what it hides: hidden text, phrases aimed at an AI, encoded blobs, a Reply-To on another domain, lookalike letters. Moving, sending and deleting stay off until you enable them, and sending only ever reaches the addresses you allow.",
   "author": { "name": "Adam Vass", "url": "https://github.com/adamVass" },
