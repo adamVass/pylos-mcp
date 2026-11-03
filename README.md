@@ -1,19 +1,14 @@
 <p align="center">
-  <img src="assets/logo/pylos.svg" alt="pylos-mcp logo, an envelope with a keyhole in its flap" width="128">
+  <img src="https://raw.githubusercontent.com/adamVass/pylos-mcp/main/assets/logo/pylos.svg" alt="pylos-mcp logo, an envelope with a keyhole in its flap" width="72">
 </p>
 
 <h1 align="center">pylos-mcp</h1>
 
 <p align="center"><strong>Your mail client shows you the message. pylos-mcp shows your assistant what it hides.</strong></p>
 
-<p align="center"><em>An email MCP server for Gmail, Outlook and Microsoft 365, iCloud and any IMAP mailbox, built so that every message reaches your assistant as data, not instructions.</em></p>
+<p align="center"><code>Warnings: sender_mismatch, hidden_text, instruction_patterns, mixed_script, encoded_blob</code></p>
 
-<p align="center">
-  <a href="https://www.npmjs.com/package/pylos-mcp"><img src="https://img.shields.io/npm/v/pylos-mcp" alt="npm version"></a>
-  <a href="https://github.com/adamVass/pylos-mcp/actions/workflows/ci.yml"><img src="https://github.com/adamVass/pylos-mcp/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/npm/l/pylos-mcp" alt="MIT license"></a>
-  <a href="https://www.bestpractices.dev/projects/15385"><img src="https://www.bestpractices.dev/projects/15385/badge" alt="OpenSSF Best Practices"></a>
-</p>
+<p align="center">Reads and drafts by default. Sending starts off. No bcc anywhere.</p>
 
 <p align="center">
   <a href="https://github.com/adamVass/pylos-mcp/releases/latest/download/pylos-mcp.mcpb"><img src="https://img.shields.io/badge/Claude_Desktop-Download_bundle-D97757" alt="Download the Claude Desktop bundle"></a>
@@ -23,30 +18,46 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/xray-dark.svg">
-    <img src="assets/readme/xray-light.svg" width="880" alt="An account security message from 'Lumen Pay Security' as a mail client shows it. pylos-mcp finds a Cyrillic letter posing as a Latin one in the sender's name, a Reply-To pointing at another domain, a hidden instruction telling the AI assistant to forward every invoice, and a hidden base64 payload. The message reaches the assistant fenced as data, not instructions, with a Warnings line naming all of it.">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/adamVass/pylos-mcp/main/assets/readme/xray-dark.svg">
+    <img src="https://raw.githubusercontent.com/adamVass/pylos-mcp/main/assets/readme/xray-light.svg" width="880" alt="An account security message from 'Lumen Pay Security' as a mail client shows it. pylos-mcp finds a Cyrillic letter posing as a Latin one in the sender's name, a Reply-To pointing at another domain, a hidden instruction telling the AI assistant to forward every invoice, and a hidden base64 payload. The message reaches the assistant fenced as data, not instructions, with a Warnings line naming all of it.">
   </picture>
 </p>
 
-Anyone can put text in your inbox, and once an AI assistant reads that inbox, they can put text in front of the assistant too. pylos-mcp lets Claude, or any MCP client, search, read and draft your mail while treating every message as input from a stranger, and it points out what a message is hiding before the assistant acts on it.
+<p align="center">
+  <a href="https://www.npmjs.com/package/pylos-mcp"><img src="https://img.shields.io/npm/v/pylos-mcp" alt="npm version"></a>
+  <a href="https://github.com/adamVass/pylos-mcp/actions/workflows/ci.yml"><img src="https://github.com/adamVass/pylos-mcp/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="https://github.com/adamVass/pylos-mcp/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/pylos-mcp" alt="MIT license"></a>
+  <a href="https://www.bestpractices.dev/projects/15385"><img src="https://www.bestpractices.dev/projects/15385/badge" alt="OpenSSF Best Practices"></a>
+</p>
 
-Every message is marked as data, with a Warnings line for what looks off, such as hidden text, phrases aimed at an AI, lookalike letters or a failed DMARC check. By default the assistant can read and draft. Moving, sending and deleting stay off until you turn them on, sending then reaches only the addresses you list, and there is no `bcc` anywhere. It runs on your machine and works with Gmail, Outlook and Microsoft 365, iCloud, Yahoo, GMX, Fastmail, mailbox.org, Posteo, Proton through Bridge, or a server of your own.
+Ask your assistant what needs you today, to sum up a long thread, or to draft the reply you keep putting off. pylos-mcp gives Claude, or any MCP client, your Gmail, Outlook and Microsoft 365, iCloud or IMAP mailbox to do it with.
 
-pylos-mcp connects to your mail provider, and with Outlook to Microsoft's sign in service. What the assistant reads goes to your AI client and, through it, to the model provider you use, as anything else you show your assistant does. Attachments you ask for are saved to your Downloads folder.
+Anyone can put text in your inbox, and once an AI assistant reads that inbox, they can put text in front of the assistant too. So every message reaches the assistant fenced as input from a stranger, with a Warnings line for what looks off, such as hidden text, phrases aimed at an AI, lookalike letters, a Reply-To on another domain or a failed DMARC check. The message in the image trips five detectors at once.
 
-## The lethal trifecta
+It runs on your machine. Moving, sending and deleting stay off until you turn them on, and sending then reaches only the recipients you allow.
 
-Simon Willison calls it [the lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/): an AI agent with access to private data, exposure to untrusted content and the ability to communicate externally. An assistant reading your email has the first two by design, because your inbox is private and anyone can write to it. Stealing what it read takes the third, a way to send it somewhere else.
+## Try it without a mailbox
 
-Sending is off by default. Drafts wait in your Drafts folder until you send them yourself, and enabling sending still requires a recipient allowlist. With `SEND_CONFIRM=true`, every message is also shown to you in a dialog and goes out only if you accept. No tool attaches a file from your disk or adds a forwarding rule.
+`--demo` serves a sample inbox instead of yours. It holds a colleague's note with a deadline, a receipt, a newsletter, a parcel notice your mail server could not verify, and the account warning from the image above. The demo reads none of your settings and connects to no mail server, so there is nothing to sign in to.
 
-The third leg can still come from elsewhere in the same client, such as a tool that fetches web pages or runs shell commands. Image markup inside a message is neutralized, but the model can still write an image link of its own, which a client that loads images would fetch. When the assistant reads your mail, keep tools that reach the internet out of that conversation.
+```sh
+claude mcp add pylos-demo -- npx -y pylos-mcp --demo
+```
 
-Fencing reduces prompt injection risk, and nothing eliminates it. The model still reads text written by strangers, so check what the assistant tells you about your mail before acting on it.
+<p>
+  <a href="https://cursor.com/install-mcp?name=pylos-demo&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsInB5bG9zLW1jcCIsIi0tZGVtbyJdfQ=="><img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Add the demo to Cursor" height="20"></a>
+  <a href="https://insiders.vscode.dev/redirect/mcp/install?name=pylos-demo&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22pylos-mcp%22%2C%22--demo%22%5D%7D"><img src="https://img.shields.io/badge/VS_Code-Install_demo-0098FF" alt="Install the demo in VS Code"></a>
+</p>
+
+In other clients, add `--demo` to the `args` of the entry under [Quick start](#quick-start) and leave out `env`. Then ask the assistant whether anything in the inbox is urgent.
+
+The newsletter shows a limit worth knowing. Its preview line is hidden from mail clients by design, so it gets a `hidden_text` warning too. A warning says what a message contains, not whether it is malicious.
 
 ## Quick start
 
 pylos-mcp works with any client that runs local MCP servers. It runs locally through `npx` and needs Node.js 22 or later. Every route below starts from example values, so replace the address and password with your own. Use an app password, not your account's regular password, and for Outlook no password at all. [Provider setup](#provider-setup) says where to get one.
+
+pylos-mcp connects to your mail provider, and with Outlook to Microsoft's sign in service. What the assistant reads goes to your AI client and, through it, to the model provider you use, as anything else you show your assistant does. Attachments you ask for are saved to your Downloads folder.
 
 **Claude Desktop.** Download [pylos-mcp.mcpb](https://github.com/adamVass/pylos-mcp/releases/latest/download/pylos-mcp.mcpb), open it, and fill in the form Desktop shows.
 
@@ -106,6 +117,16 @@ Restart your client fully after any change, since tools register only at startup
 
 If the Claude Desktop extension shows "Server disconnected", the reason is in Desktop's `main.log` in `~/Library/Logs/Claude` on macOS or `%APPDATA%\Claude\logs` on Windows, on a line starting with `pylos-mcp:`.
 
+## Why the defaults are what they are
+
+Simon Willison calls it [the lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/): an AI agent with access to private data, exposure to untrusted content and the ability to communicate externally. An assistant reading your email has the first two by design, because your inbox is private and anyone can write to it. Stealing what it read takes the third, a way to send it somewhere else.
+
+Sending is off by default. Drafts wait in your Drafts folder until you send them yourself, and enabling sending still requires a recipient allowlist. With `SEND_CONFIRM=true`, every message is also shown to you in a dialog and goes out only if you accept. No tool attaches a file from your disk or adds a forwarding rule.
+
+The third leg can still come from elsewhere in the same client, such as a tool that fetches web pages or runs shell commands. Image markup inside a message is neutralized, but the model can still write an image link of its own, which a client that loads images would fetch. When the assistant reads your mail, keep tools that reach the internet out of that conversation.
+
+Fencing reduces prompt injection risk, and nothing eliminates it. The model still reads text written by strangers, so check what the assistant tells you about your mail before acting on it.
+
 ## Capabilities
 
 Each capability is a separate switch, and turning one on leaves the others as they are. Reading is always on, drafting starts on, and everything else stays off until you list it in `CAPABILITIES`. A tier that is off has its tools left out of the tool list entirely, so a model never learns they exist.
@@ -143,7 +164,7 @@ Sending stays closed with `send` on until `SEND_ALLOWLIST` names recipients. It 
 
 ## Suspicion warnings
 
-Six detectors annotate `get_email` results for hidden text, instruction patterns, encoded blobs, sender mismatch, mixed scripts and DMARC failure. The Warnings line sits above the content, written in the server's own words and never quoting the content that triggered it. The image above shows five detectors firing on one message.
+Six detectors annotate `get_email` results for hidden text, instruction patterns, encoded blobs, sender mismatch, mixed scripts and DMARC failure. The Warnings line sits above the content, written in the server's own words and never quoting the content that triggered it. The image at the top shows five detectors firing on one message, and `--demo` lets you see them in your own client.
 
 ```
 Warnings: hidden_text (412 hidden characters via display:none), encoded_blob (base64 run of 600 characters)
@@ -239,6 +260,13 @@ Every tool then takes a required `account`, and each tool lists only the account
 Mistakes show at startup, grouped, each naming the variable to fix. That includes a suffix naming no account in `ACCOUNTS` and the same mailbox configured twice, meaning the same `EMAIL_USER` on the same IMAP host.
 
 The Claude Desktop bundle holds one account, since its install form cannot repeat a group of fields. For several accounts, put the entry above in a client's JSON config, Claude Desktop's `claude_desktop_config.json` included.
+
+## When pylos-mcp is not a fit
+
+- Your mail must never reach a model provider. What the assistant reads goes to the model you use, as anything else you show it does.
+- You want Claude Desktop to send with a confirmation before each message. Desktop does not show those dialogs yet, so there you get drafts, or sending to an allowlist without confirmation.
+- You need bcc, attachments from your disk or filter rules the assistant writes. None of these exist, on purpose.
+- Your organization blocks third party apps or SMTP AUTH and an administrator will not allow them.
 
 ## Maintenance expectations
 
