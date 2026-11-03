@@ -82,3 +82,27 @@ it('exits nonzero and names the missing variable when EMAIL_USER is absent', asy
   expect(exitCode).not.toBe(0)
   expect(stderr).toContain('EMAIL_USER')
 }, 10_000)
+
+// the README's Warnings line is pasted from this output, so the two cannot drift apart
+it('serves the demo mailbox with no account settings at all', async () => {
+  const transport = new StdioClientTransport({ command: process.execPath, args: [ENTRY, '--demo'], env: {} })
+  const client = new Client({ name: 'smoke-test', version: '0.0.0' })
+
+  await client.connect(transport)
+  try {
+    const { tools } = await client.listTools()
+    expect(tools.map((tool) => tool.name).sort()).toEqual(DEFAULT_SIX)
+
+    const result = await client.callTool({ name: 'get_email', arguments: { folder: 'INBOX', uid: 7 } })
+    const text = (result.content as { text: string }[])[0].text
+    expect(text.split('\n').find((l) => l.startsWith('Warnings:'))).toBe(
+      'Warnings: sender_mismatch (Reply-To domain differs from From), ' +
+        'hidden_text (1296 hidden characters via display:none, tiny font, containing an instruction-like phrase, containing an encoded run), ' +
+        'instruction_patterns (1 instruction-like phrase matched in body), ' +
+        'mixed_script (1 word mixing Latin with lookalike Cyrillic or Greek letters in From), ' +
+        'encoded_blob (base64 run of 1081 characters)',
+    )
+  } finally {
+    await client.close()
+  }
+}, 15_000)

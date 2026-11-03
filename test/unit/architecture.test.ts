@@ -40,6 +40,15 @@ it('mcp/ never reaches the network directly', () => {
   expect(offenders).toEqual([])
 })
 
+// the demo's promise is that it cannot reach a mailbox, whatever the environment holds
+it('demo/ never reaches the network', () => {
+  const offenders = importsMatching(
+    'demo',
+    String.raw`(?:imapflow|nodemailer|node:net|node:tls|[^']*/core/(?:client|oauth|smtp|sieve))(?:\.js)?(?:/[^']*)?`,
+  )
+  expect(offenders).toEqual([])
+})
+
 // safety/ is the innermost layer and depends on nothing above, so the rendering
 // and escaping rules cannot start varying with where the content came from
 it('safety/ depends on nothing above it', () => {

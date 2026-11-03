@@ -4,6 +4,10 @@ Notable changes to pylos-mcp. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+
+- `--demo` serves a sample inbox instead of a real one, so the warnings can be tried in any client without an account. It reads no settings and connects to no mail server. Reading and drafting work as usual, and drafts stay in memory until the server stops.
+
 ## [1.3.0] - 2026-10-20
 
 ### Added

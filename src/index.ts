@@ -3,6 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { loadAccounts, type ParsedAccount } from './accounts.js'
 import { ConfigError } from './config.js'
 import { openAccounts } from './core/api.js'
+import { openDemo } from './demo/core.js'
 import { buildServer } from './mcp/server.js'
 
 /** exits before any ImapSession or transport exists, so a bad config never opens a socket */
@@ -20,7 +21,7 @@ function loadAccountsOrExit(): ParsedAccount[] {
 
 async function main(): Promise<void> {
   // one session per account, but the send cap and compose budget span all of them
-  const { accounts, close } = openAccounts(loadAccountsOrExit())
+  const { accounts, close } = process.argv.includes('--demo') ? openDemo() : openAccounts(loadAccountsOrExit())
   const server = buildServer(accounts)
 
   const shutdown = (): void => {
