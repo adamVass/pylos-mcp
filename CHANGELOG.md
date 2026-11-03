@@ -4,6 +4,8 @@ Notable changes to pylos-mcp. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-03
+
 ### Added
 
 - `--demo` serves a sample inbox instead of a real one, so the warnings can be tried in any client without an account. It reads no settings and connects to no mail server. Reading and drafting work as usual, and drafts stay in memory until the server stops.
@@ -193,6 +195,7 @@ A configuration that loaded on 0.2.0 can now fail at startup, if `SEND_ALLOWLIST
 - Warnings for hidden text, instruction-like phrases and long encoded runs.
 - Provider presets for Gmail, iCloud, Yahoo, GMX, Fastmail, mailbox.org and Posteo.
 
+[1.4.0]: https://github.com/adamVass/pylos-mcp/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/adamVass/pylos-mcp/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/adamVass/pylos-mcp/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/adamVass/pylos-mcp/compare/v1.0.1...v1.1.0
