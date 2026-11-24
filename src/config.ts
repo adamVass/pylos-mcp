@@ -232,11 +232,14 @@ function expandHome(dir: string): string {
   return dir
 }
 
-// MCPB substitutes "" for optional fields left blank, so "" has to read as unset
+// MCPB hosts substitute "" for optional fields left blank, and some older ones
+// pass the placeholder through untouched, so both have to read as unset
+const UNFILLED_PLACEHOLDER = /^\$\{user_config\.\w+\}$/
+
 export function withoutEmptyValues(env: Record<string, string | undefined>): Record<string, string | undefined> {
   const copy: Record<string, string | undefined> = {}
   for (const [key, value] of Object.entries(env)) {
-    copy[key] = value === '' ? undefined : value
+    copy[key] = value === '' || (value !== undefined && UNFILLED_PLACEHOLDER.test(value)) ? undefined : value
   }
   return copy
 }

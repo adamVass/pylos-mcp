@@ -4,6 +4,10 @@ Notable changes to pylos-mcp. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Fixed
+
+- Some Claude Desktop versions pass a setting left empty in the form as its placeholder text, such as `${user_config.provider}`, and the server refused to start. Such placeholders now count as unset.
+
 ## [1.4.0] - 2026-11-03
 
 ### Added

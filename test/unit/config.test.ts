@@ -137,6 +137,17 @@ describe('loadConfig', () => {
     expect(loadConfig({ ...BASE, SEND_SAVE_COPY: '' }).sendSaveCopy).toBe(true)
     expect([...loadConfig({ ...BASE, CAPABILITIES: '' }).capabilities].sort()).toEqual(['drafts', 'read'])
   })
+  it('treats an unfilled ${user_config.*} placeholder as unset', () => {
+    const cfg = loadConfig({
+      ...BASE,
+      PROVIDER: '${user_config.provider}',
+      IMAP_HOST: 'mail.x.example',
+      SEND_ALLOWLIST: '${user_config.send_allowlist}',
+    })
+    expect(cfg.imap.host).toBe('mail.x.example')
+    expect(cfg.sendAllowlist).toBeUndefined()
+    expect(loadConfig({ ...BASE, IMAP_HOST: 'x${user_config.imap_host}' }).imap.host).toBe('x${user_config.imap_host}')
+  })
   it('STRIP_HIDDEN_TEXT=true with FLAG_HIDDEN_TEXT=false is refused as inert', () => {
     expect(() => loadConfig({ ...BASE, STRIP_HIDDEN_TEXT: 'true', FLAG_HIDDEN_TEXT: 'false' })).toThrow(ConfigError)
     expect(loadConfig({ ...BASE, STRIP_HIDDEN_TEXT: 'true' }).detect.stripHiddenText).toBe(true)
